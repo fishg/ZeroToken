@@ -1,0 +1,23 @@
+{
+  "id": "zero-token",
+  "providers": [
+    "deepseek-web",
+    "claude-web",
+    "doubao-web",
+    "chatgpt-web",
+    "qwen-web",
+    "qwen-cn-web",
+    "kimi-web",
+    "gemini-web",
+    "grok-web",
+    "glm-web",
+    "glm-intl-web",
+    "perplexity-web",
+    "xiaomimo-web"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

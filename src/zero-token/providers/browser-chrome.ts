@@ -1,0 +1,343 @@
+import { type ChildProcessWithoutNullStreams, execSync, spawn } from "node:child_process";
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import WebSocket from "ws";
+import { resolveStateDir } from "./config-paths.js";
+import { appendCdpPath, getHeadersWithAuth, normalizeCdpWsUrl } from "./browser-cdp.js";
+import {
+  type BrowserExecutable,
+  resolveBrowserExecutableForPlatform,
+} from "./chrome.executables.js";
+import {
+  decorateOpenClawProfile,
+  ensureProfileCleanExit,
+  isProfileDecorated,
+} from "./chrome.profile-decoration.js";
+import type { ResolvedBrowserConfig, ResolvedBrowserProfile } from "./browser-config.js";
+import {
+  DEFAULT_OPENCLAW_BROWSER_COLOR,
+  DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME,
+} from "./browser-constants.js";
+
+function exists(filePath: string) {
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+async function ensurePortAvailable(port: number, host = "127.0.0.1"): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (error) => {
+      server.close();
+      reject(error);
+    });
+    server.listen(port, host, () => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+}
+
+function resolveBrowserExecutable(resolved: ResolvedBrowserConfig): BrowserExecutable | null {
+  return resolveBrowserExecutableForPlatform(resolved, process.platform);
+}
+
+export type RunningChrome = {
+  pid: number;
+  exe: BrowserExecutable;
+  userDataDir: string;
+  cdpPort: number;
+  startedAt: number;
+  proc: ChildProcessWithoutNullStreams;
+};
+
+export function resolveOpenClawUserDataDir(profileName = DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME) {
+  return path.join(resolveStateDir(), "browser", profileName, "user-data");
+}
+
+function cdpUrlForPort(cdpPort: number) {
+  return `http://127.0.0.1:${cdpPort}`;
+}
+
+type ChromeVersion = {
+  webSocketDebuggerUrl?: string;
+};
+
+async function fetchChromeVersion(cdpUrl: string, timeoutMs = 500): Promise<ChromeVersion | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const versionUrl = appendCdpPath(cdpUrl, "/json/version");
+    const response = await fetch(versionUrl, {
+      signal: ctrl.signal,
+      headers: getHeadersWithAuth(versionUrl),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json()) as ChromeVersion;
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function isChromeReachable(cdpUrl: string, timeoutMs = 500): Promise<boolean> {
+  const version = await fetchChromeVersion(cdpUrl, timeoutMs);
+  return Boolean(version);
+}
+
+export async function getChromeWebSocketUrl(
+  cdpUrl: string,
+  timeoutMs = 500,
+): Promise<string | null> {
+  const version = await fetchChromeVersion(cdpUrl, timeoutMs);
+  const wsUrl = String(version?.webSocketDebuggerUrl ?? "").trim();
+  if (!wsUrl) {
+    return null;
+  }
+  return normalizeCdpWsUrl(wsUrl, cdpUrl);
+}
+
+async function canOpenWebSocket(wsUrl: string, timeoutMs = 800): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const headers = getHeadersWithAuth(wsUrl);
+    const ws = new WebSocket(wsUrl, {
+      handshakeTimeout: timeoutMs,
+      ...(Object.keys(headers).length ? { headers } : {}),
+    });
+    const timer = setTimeout(() => {
+      try {
+        ws.terminate();
+      } catch {
+        // ignore
+      }
+      resolve(false);
+    }, Math.max(50, timeoutMs + 25));
+
+    ws.once("open", () => {
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {
+        // ignore
+      }
+      resolve(true);
+    });
+    ws.once("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
+}
+
+export async function launchOpenClawChrome(
+  resolved: ResolvedBrowserConfig,
+  profile: ResolvedBrowserProfile,
+): Promise<RunningChrome> {
+  if (!profile.cdpIsLoopback) {
+    throw new Error(`Profile "${profile.name}" is remote; cannot launch local Chrome.`);
+  }
+  await ensurePortAvailable(profile.cdpPort);
+
+  const exe = resolveBrowserExecutable(resolved);
+  if (!exe) {
+    throw new Error(
+      "No supported browser found (Chrome/Brave/Edge/Chromium on macOS, Linux, or Windows).",
+    );
+  }
+
+  const userDataDir = resolveOpenClawUserDataDir(profile.name);
+  fs.mkdirSync(userDataDir, { recursive: true });
+
+  const needsDecorate = !isProfileDecorated(
+    userDataDir,
+    profile.name,
+    (profile.color ?? DEFAULT_OPENCLAW_BROWSER_COLOR).toUpperCase(),
+  );
+
+  const spawnOnce = () => {
+    const args: string[] = [
+      `--remote-debugging-port=${profile.cdpPort}`,
+      `--user-data-dir=${userDataDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-sync",
+      "--disable-background-networking",
+      "--disable-component-update",
+      "--disable-features=Translate,MediaRouter",
+      "--disable-session-crashed-bubble",
+      "--hide-crash-restore-bubble",
+      "--password-store=basic",
+    ];
+
+    if (resolved.headless) {
+      args.push("--headless=new", "--disable-gpu");
+    }
+    if (resolved.noSandbox) {
+      args.push("--no-sandbox", "--disable-setuid-sandbox");
+    }
+    if (process.platform === "linux") {
+      args.push("--disable-dev-shm-usage");
+    }
+    args.push("--disable-features=AutomationControlled");
+    if (resolved.extraArgs.length > 0) {
+      args.push(...resolved.extraArgs);
+    }
+    args.push("about:blank");
+
+    return spawn(exe.path, args, {
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        HOME: os.homedir(),
+      },
+    });
+  };
+
+  const startedAt = Date.now();
+  const localStatePath = path.join(userDataDir, "Local State");
+  const preferencesPath = path.join(userDataDir, "Default", "Preferences");
+  const needsBootstrap = !exists(localStatePath) || !exists(preferencesPath);
+
+  if (needsBootstrap) {
+    const bootstrap = spawnOnce();
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      if (exists(localStatePath) && exists(preferencesPath)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    try {
+      bootstrap.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+    const exitDeadline = Date.now() + 5_000;
+    while (Date.now() < exitDeadline) {
+      if (bootstrap.exitCode != null) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  if (needsDecorate) {
+    try {
+      decorateOpenClawProfile(userDataDir, {
+        name: profile.name,
+        color: profile.color,
+      });
+    } catch (error) {
+      console.warn(`openclaw browser profile decoration failed: ${String(error)}`);
+    }
+  }
+
+  try {
+    ensureProfileCleanExit(userDataDir);
+  } catch (error) {
+    console.warn(`openclaw browser clean-exit prefs failed: ${String(error)}`);
+  }
+
+  const proc = spawnOnce();
+  const readyDeadline = Date.now() + 15_000;
+  while (Date.now() < readyDeadline) {
+    if (await isChromeReachable(profile.cdpUrl, 500)) {
+      const wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 500);
+      if (!wsUrl || (await canOpenWebSocket(wsUrl, 800))) {
+        break;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  if (!(await isChromeReachable(profile.cdpUrl, 500))) {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+    throw new Error(
+      `Failed to start Chrome CDP on port ${profile.cdpPort} for profile "${profile.name}".`,
+    );
+  }
+
+  return {
+    pid: proc.pid ?? -1,
+    exe,
+    userDataDir,
+    cdpPort: profile.cdpPort,
+    startedAt,
+    proc,
+  };
+}
+
+export async function stopOpenClawChrome(running: RunningChrome, timeoutMs = 2500) {
+  const proc = running.proc;
+  if (proc.killed) {
+    return;
+  }
+  try {
+    proc.kill("SIGTERM");
+  } catch {
+    // ignore
+  }
+
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (!proc.exitCode && proc.killed) {
+      break;
+    }
+    if (!(await isChromeReachable(cdpUrlForPort(running.cdpPort), 200))) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  try {
+    proc.kill("SIGKILL");
+  } catch {
+    // ignore
+  }
+}
+
+export async function killExistingChromeOnPort(
+  cdpPort: number,
+  onProgress?: (message: string) => void,
+): Promise<boolean> {
+  if (process.platform === "win32") {
+    return false;
+  }
+  const cdpUrl = cdpUrlForPort(cdpPort);
+  if (!(await isChromeReachable(cdpUrl, 300))) {
+    return false;
+  }
+  const progress = onProgress ?? (() => {});
+  progress("Detected existing browser, closing it first...");
+  try {
+    execSync(`pkill -f "remote-debugging-port=${cdpPort}" 2>/dev/null || true`, {
+      stdio: "ignore",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    execSync(`pkill -9 -f "remote-debugging-port=${cdpPort}" 2>/dev/null || true`, {
+      stdio: "ignore",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    return !(await isChromeReachable(cdpUrl, 300));
+  } catch {
+    return false;
+  }
+}
