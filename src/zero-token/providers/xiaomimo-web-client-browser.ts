@@ -65,8 +65,8 @@ export class XiaomiMimoWebClientBrowser {
       }
     } else {
       // Force headless so no browser window pops up during API calls
-      const headlessConfig = { ...browserConfig, headless: true };
-      this.running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
+      this.running = await launchOpenClawChrome(hiddenConfig, profile);
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(`http://127.0.0.1:${this.running.cdpPort}`, 2000);
         if (wsUrl) {

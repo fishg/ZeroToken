@@ -116,8 +116,8 @@ export class ZWebClientBrowser {
       }
     } else {
       // Force headless so no browser window pops up during API calls
-      const headlessConfig = { ...browserConfig, headless: true };
-      const running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
+      const running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2000);

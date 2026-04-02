@@ -115,8 +115,8 @@ export class ClaudeWebClientBrowser {
       console.log(`[Claude Web Browser] Connected to existing Chrome successfully`);
     } else {
       // Launch new Chrome (headless so no window pops up during API calls)
-      const headlessConfig = { ...browserConfig, headless: true };
-      this.running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
+      this.running = await launchOpenClawChrome(hiddenConfig, profile);
 
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl: string | null = null;

@@ -191,6 +191,22 @@ function Start-Gateway {
     Write-Host ""
     Write-Host "  正在启动 Zero-Token 服务..." -ForegroundColor Cyan
     Write-Host ""
+
+    # 自动停止旧的 gateway 进程
+    & $OpenClawCmd gateway stop 2>&1 | Out-Null
+
+    # 杀掉占用 18789 和 18800 端口的残留进程
+    $ports = @(18789, 18800)
+    foreach ($port in $ports) {
+        $lines = netstat -ano | Select-String ":$port\s.*LISTENING"
+        foreach ($line in $lines) {
+            if ($line -match '\s(\d+)\s*$') {
+                $pid = $Matches[1]
+                taskkill /PID $pid /F 2>&1 | Out-Null
+            }
+        }
+    }
+
     Write-Host "  网址:  http://127.0.0.1:18789/" -ForegroundColor White
     Write-Host "  关闭此窗口即可停止服务" -ForegroundColor Gray
     Write-Host ""

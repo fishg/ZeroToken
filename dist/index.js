@@ -2432,8 +2432,8 @@ var init_claude_web_client_browser = __esm({
           }
           console.log(`[Claude Web Browser] Connected to existing Chrome successfully`);
         } else {
-          const headlessConfig = { ...browserConfig, headless: true };
-          this.running = await launchOpenClawChrome(headlessConfig, profile);
+          const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+          this.running = await launchOpenClawChrome(hiddenConfig, profile);
           const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
           let wsUrl = null;
           for (let i = 0; i < 10; i++) {
@@ -4798,8 +4798,8 @@ var ChatGPTWebClientBrowser = class {
       await this.ensureChatGptPageReady();
       console.log(`[ChatGPT Web Browser] Connected to existing Chrome successfully`);
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      this.running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      this.running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -6756,8 +6756,8 @@ var DoubaoWebClientBrowser = class {
       }
       console.log(`[Doubao Web Browser] Connected to existing Chrome successfully`);
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      this.running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      this.running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -7420,8 +7420,8 @@ var GeminiWebClientBrowser = class {
         );
       }
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      const running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      const running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -8246,8 +8246,8 @@ var GlmIntlWebClientBrowser = class {
         );
       }
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      const running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      const running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -8996,8 +8996,8 @@ var ZWebClientBrowser = class {
         );
       }
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      const running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      const running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -9773,8 +9773,8 @@ var GrokWebClientBrowser = class {
         );
       }
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      const running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      const running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -10650,8 +10650,8 @@ var KimiWebClientBrowser = class {
         await this.page.goto(`${this.baseUrl}/`, { waitUntil: "domcontentloaded" });
       }
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      this.running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      this.running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -11306,8 +11306,8 @@ var PerplexityWebClientBrowser = class {
         );
       }
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      const running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      const running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -11768,8 +11768,8 @@ var QwenCNWebClientBrowser = class {
       }
       console.log(`[Qwen CN Web Browser] Connected successfully`);
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      this.running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      this.running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -12555,8 +12555,8 @@ var QwenWebClientBrowser = class {
       }
       console.log(`[Qwen Web Browser] Connected successfully`);
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      this.running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      this.running = await launchOpenClawChrome(hiddenConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -13279,8 +13279,8 @@ var XiaomiMimoWebClientBrowser = class {
         throw new Error(`Cannot connect to Chrome`);
       }
     } else {
-      const headlessConfig = { ...browserConfig, headless: true };
-      this.running = await launchOpenClawChrome(headlessConfig, profile);
+      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...browserConfig.extraArgs || [], "--window-position=-32000,-32000", "--window-size=1,1"] };
+      this.running = await launchOpenClawChrome(hiddenConfig, profile);
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(`http://127.0.0.1:${this.running.cdpPort}`, 2e3);
         if (wsUrl) {
