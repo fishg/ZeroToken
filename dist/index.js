@@ -1911,6 +1911,9 @@ function resolveBrowserConfig(cfg, rootConfig) {
   if (!extraArgs.some((a) => a.startsWith("--window-size"))) {
     extraArgs.push("--window-size=1280,900");
   }
+  if (!extraArgs.some((a) => a === "--start-maximized")) {
+    extraArgs.push("--start-maximized");
+  }
   return {
     enabled,
     evaluateEnabled,
