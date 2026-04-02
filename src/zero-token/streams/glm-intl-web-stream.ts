@@ -280,7 +280,7 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
             const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
             const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
             const toolCallStart = tagBuffer.match(
-              /<tool_call\s*(?:id=['"]?([^'"]+)['"]?\s*)?name=['"]?([^'"]+)['"]?\s*>/i,
+              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i,
             );
             const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
 
@@ -295,7 +295,7 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
                 type: "tool_start",
                 idx: toolCallStart?.index ?? -1,
                 len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1],
+                id: toolCallStart?.[1] || toolCallStart?.[3],
                 name: toolCallStart?.[2],
               },
               {

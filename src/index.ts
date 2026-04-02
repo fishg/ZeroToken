@@ -1,3 +1,7 @@
+import { execSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import { registerApiProvider, getApiProvider } from "@mariozechner/pi-ai";
 import {
@@ -378,12 +382,104 @@ function buildRegisteredProvider(
   };
 }
 
+/**
+ * Pre-startup cleanup: kill stale gateway processes and remove lock files.
+ * This prevents the "gateway already running; lock timeout" error that
+ * confuses users into thinking the product is broken.
+ */
+function cleanupStaleGateway(port: number = 18789): void {
+  try {
+    if (process.platform === "win32") {
+      // Find PID listening on the gateway port via netstat
+      const netstatOutput = execSync(
+        `netstat -aon | findstr ":${port} " | findstr "LISTENING"`,
+        { encoding: "utf-8", timeout: 5000 },
+      ).trim();
+      if (netstatOutput) {
+        const lines = netstatOutput.split("\n");
+        const pids = new Set<string>();
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          const pid = parts[parts.length - 1];
+          if (pid && pid !== "0" && pid !== String(process.pid)) {
+            pids.add(pid);
+          }
+        }
+        for (const pid of pids) {
+          console.log(`[zero-token] Cleaning up stale gateway process (pid ${pid}) on port ${port}`);
+          try {
+            execSync(`taskkill /PID ${pid} /F`, { timeout: 5000, stdio: "ignore" });
+          } catch {
+            // Process may have already exited
+          }
+        }
+        if (pids.size > 0) {
+          // Brief pause to let the process fully release the port
+          execSync("timeout /t 2 /nobreak >nul 2>&1", { timeout: 5000, stdio: "ignore" });
+        }
+      }
+    } else {
+      // Linux/macOS: use lsof to find PID on port
+      try {
+        const lsofOutput = execSync(
+          `lsof -ti :${port}`,
+          { encoding: "utf-8", timeout: 5000 },
+        ).trim();
+        if (lsofOutput) {
+          for (const pid of lsofOutput.split("\n")) {
+            if (pid && pid !== String(process.pid)) {
+              console.log(`[zero-token] Cleaning up stale gateway process (pid ${pid}) on port ${port}`);
+              try {
+                process.kill(Number(pid), "SIGTERM");
+              } catch {
+                // Process may have already exited
+              }
+            }
+          }
+        }
+      } catch {
+        // lsof returns non-zero when no process found — that's fine
+      }
+    }
+
+    // Clean up stale lock files in temp directory
+    const tmpDir = os.tmpdir();
+    const lockDirs = ["openclaw", `openclaw-${process.getuid?.() ?? ""}`].filter(Boolean);
+    for (const dirName of lockDirs) {
+      const lockDir = path.join(tmpDir, dirName);
+      try {
+        if (fs.existsSync(lockDir)) {
+          const files = fs.readdirSync(lockDir);
+          for (const file of files) {
+            if (file.startsWith("gateway.") && file.endsWith(".lock")) {
+              const lockPath = path.join(lockDir, file);
+              try {
+                fs.unlinkSync(lockPath);
+                console.log(`[zero-token] Removed stale lock file: ${lockPath}`);
+              } catch {
+                // Lock file may be held by active process
+              }
+            }
+          }
+        }
+      } catch {
+        // Directory access error — skip
+      }
+    }
+  } catch {
+    // Best-effort cleanup — never let this block plugin startup
+  }
+}
+
 const zeroTokenPlugin = {
   id: "zero-token",
   name: "Zero Token Web Providers",
   description: "Use browser-authenticated web models without standard API keys.",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {
+    // Clean up stale gateway processes before lock acquisition
+    const gatewayPort = (api.runtime?.config as any)?.gateway?.port ?? 18789;
+    cleanupStaleGateway(gatewayPort);
     // Build a set of zero-token provider IDs for quick lookup
     const webProviderIds = new Set(WEB_PROVIDERS.map((d) => d.id));
     const webProviderMap = new Map(WEB_PROVIDERS.map((d) => [d.id, d]));
@@ -407,7 +503,8 @@ const zeroTokenPlugin = {
         return async (model, context, options) => {
           const providerId =
             typeof model.provider === "string" ? model.provider.trim() : "";
-          console.log(`[zero-token] interceptor called: model.provider="${providerId}", model.api="${model.api}", model.id="${model.id}", isWebProvider=${webProviderIds.has(providerId)}`);
+          const toolCount = Array.isArray((context as any).tools) ? (context as any).tools.length : 'undefined';
+          console.log(`[zero-token] interceptor called: model.provider="${providerId}", model.api="${model.api}", model.id="${model.id}", isWebProvider=${webProviderIds.has(providerId)}, context.tools=${toolCount}, contextKeys=${Object.keys(context).join(',')}`);
           if (webProviderIds.has(providerId)) {
             const desc = webProviderMap.get(providerId)!;
             // Resolve credentials

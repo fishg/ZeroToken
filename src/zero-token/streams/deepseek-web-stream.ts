@@ -65,27 +65,31 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
 
         const messages = context.messages || [];
         const systemPrompt = (context as unknown as { systemPrompt?: string }).systemPrompt || "";
+        const contextKeys = Object.keys(context).join(',');
+        const toolsRaw = (context as any).tools;
+        const toolCount = Array.isArray(toolsRaw) ? toolsRaw.length : typeof toolsRaw;
         console.log(
-          `[DeepseekWebStream] Context messages count: ${messages.length}, hasSystemPrompt: ${!!systemPrompt}`,
+          `[DeepseekWebStream] Context messages count: ${messages.length}, hasSystemPrompt: ${!!systemPrompt}, context.tools=${toolCount}, contextKeys=${contextKeys}`,
         );
         let prompt = "";
         let toolPrompt = "";
 
-        if (!parentId) {
-          // First turn or new session: Aggregate all history including System Prompt
+        // When tools are available, ALWAYS use first-turn mode (aggregate full history).
+        // DeepSeek's continuing-turn API returns data in a format that breaks tool_call
+        // XML parsing. By always sending full history, we ensure reliable tool detection.
+        const forceFirstTurn = (context.tools || []).length > 0;
+        if (!parentId || forceFirstTurn) {
+          // First turn or forced first-turn: Aggregate all history including System Prompt
           const historyParts: string[] = [];
 
           const tools = context.tools || [];
           let systemPromptContent = systemPrompt;
 
           if (tools.length > 0) {
-            toolPrompt = "\n## Available Tools\n";
-            for (const tool of tools) {
-              toolPrompt += `- ${tool.name}: ${tool.description}\n`;
-            }
+            // The OpenClaw system prompt already includes full tool descriptions.
+            // We only need to append the XML calling format instruction.
+            toolPrompt = '\n\n[CRITICAL TOOL CALLING INSTRUCTION]\nYou have tools available. To call ANY tool, you MUST output this EXACT XML format:\n<tool_call id="unique_id" name="tool_name">{"param1": "value1", "param2": "value2"}</tool_call>\n\nExamples:\n<tool_call id="call_1" name="read">{"file_path": "D:\\\\Users\\\\111\\\\Desktop\\\\文件夹\\\\111.txt"}</tool_call>\n<tool_call id="call_2" name="write">{"file_path": "D:\\\\Users\\\\111\\\\Desktop\\\\文件夹\\\\111.txt", "content": "Hello World"}</tool_call>\n<tool_call id="call_3" name="exec">{"command": "echo hello"}</tool_call>\n<tool_call id="call_4" name="exec">{"command": "python D:\\\\Users\\\\111\\\\Desktop\\\\hello.py"}</tool_call>\n\nRULES:\n1. Only use tools when the user EXPLICITLY requests file/system operations (create file, read file, run command, edit file, etc.). For questions, code writing, explanations, etc., reply directly in text WITHOUT calling any tool.\n2. ABSOLUTELY NO self-talk, reasoning, or planning. NEVER output "The user wants...", "Let me try...", etc.\n3. When calling a tool, output ONLY the <tool_call> XML tag. NOTHING else.\n4. After receiving a tool result, respond with a brief confirmation ONLY.\n5. For creating files with content, use the write tool. For creating empty files on Windows, use exec with New-Item.\n6. ALWAYS reply in the SAME language the user used. 如果用户说中文，你必须全程用中文回复。\n7. If a tool call fails, try a different approach silently.\n8. When user asks to run/execute a file or program, use the exec tool (e.g. exec with "python file.py", "node file.js", "code file.py"). NEVER tell the user to run it manually.';
             systemPromptContent += toolPrompt;
-            systemPromptContent +=
-              '\n\n[SYSTEM HINT]: Keep in mind your available tools. To use a tool, you MUST output the EXACT XML format: <tool_call id="unique_id" name="tool_name">{"arg": "value"}</tool_call>. Using plain text to describe your action will FAIL to execute the tool.';
           }
 
           if (systemPromptContent && !messages.some((m) => (m.role as string) === "system")) {
@@ -170,15 +174,26 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
           }
         }
 
-        if (toolPrompt && parentId) {
-          prompt +=
-            '\n\n[SYSTEM HINT]: Keep in mind your available tools. To use a tool, you MUST output the EXACT XML format: <tool_call id="unique_id" name="tool_name">{"arg": "value"}</tool_call>. Using plain text to describe your action will FAIL to execute the tool.';
+        const toolsAvailable = (context.tools || []).length > 0;
+        if (toolsAvailable) {
+          if (parentId) {
+            // Continuing turn: send FULL tool format instruction, not just a short reminder.
+            // DeepSeek web API may not retain first-turn instructions well enough.
+            prompt +=
+              '\n\n[CRITICAL TOOL CALLING INSTRUCTION]\nTo call ANY tool, you MUST output this EXACT XML format:\n<tool_call id="unique_id" name="tool_name">{"param1": "value1"}</tool_call>\n\nExamples:\n<tool_call id="call_1" name="exec">{"command": "python hello.py"}</tool_call>\n<tool_call id="call_2" name="write">{"file_path": "path", "content": "text"}</tool_call>\n\nRULES: Only use tools for explicit file/system operations. When user asks to run a file, use exec. No self-talk. Reply in user\'s language. 如果用户说中文，用中文回复。';
+          } else {
+            prompt +=
+              '\n\n[IMPORTANT REMINDER] Tool format: <tool_call id="call_1" name="tool_name">{"param": "value"}</tool_call>\nOnly use tools for explicit file/system operations. When user asks to run/execute a file, use exec tool.\nNo self-talk. Reply in user\'s language. 如果用户说中文，用中文回复。';
+          }
         }
 
         console.log(
-          `[DeepseekWebStream] Starting run for session: ${sessionKey}. DS session: ${dsSessionId}. Parent: ${parentId}. Prompt length: ${prompt.length}`,
+          `[DeepseekWebStream] Starting run for session: ${sessionKey}. DS session: ${dsSessionId}. Parent: ${parentId}. Prompt length: ${prompt.length}. isContinuing: ${!!parentId}`,
         );
         console.log(`[DeepseekWebStream] Full Prompt Preview: ${prompt.slice(0, 500)}...`);
+        if (parentId) {
+          console.log(`[DeepseekWebStream] CONTINUING TURN - Full prompt:\n${prompt}`);
+        }
 
         if (!prompt) {
           console.error(`[DeepseekWebStream] No prompt to send:`, JSON.stringify(messages));
@@ -189,6 +204,16 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
           (options as unknown as { searchEnabled?: boolean })?.searchEnabled ?? true;
         const preempt = (options as unknown as { preempt?: boolean })?.preempt ?? false;
         const fileIds = (options as unknown as { fileIds?: string[] })?.fileIds || [];
+
+        // When forcing first-turn mode for tools, create a new session and don't pass parentId
+        // to avoid DeepSeek's continuing-turn data format that breaks tool_call parsing
+        if (forceFirstTurn && parentId) {
+          console.log(`[DeepseekWebStream] Force first-turn mode: creating new session for tool-enabled request`);
+          const newSession = await client.createChatSession();
+          dsSessionId = newSession.chat_session_id || "";
+          sessionMap.set(sessionKey, dsSessionId);
+          parentId = undefined;
+        }
 
         const responseStream = await client.chatCompletions({
           sessionId: dsSessionId,
@@ -327,6 +352,10 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
           if (!delta) {
             return;
           }
+          // Debug: log when tool_call-like content appears
+          if (delta.includes('tool_call') || delta.includes('<tool') || delta.includes('</tool')) {
+            console.log(`[DeepseekWebStream] TOOL TAG in delta: "${delta.slice(0, 200)}", mode=${currentMode}, tagBufferLen=${tagBuffer.length}`);
+          }
 
           // Junk token filtering
           const JUNK_TOKENS = ["<｜end▁of▁thinking｜>", "<|endoftext|>"];
@@ -348,7 +377,7 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
             const finalStartMatch = tagBuffer.match(/<final\b[^<>]*>/i);
             const finalEndMatch = tagBuffer.match(/<\/final\b[^<>]*>/i);
             const toolCallStartMatch = tagBuffer.match(
-              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*>/i,
+              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i,
             );
             const toolCallEndMatch = tagBuffer.match(/<\/tool_call\b[^<>]*>/i);
             const replyMatch = tagBuffer.match(/\[\[reply_to_current\]\]/i);
@@ -380,7 +409,7 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
                 type: "tool_call_start",
                 idx: toolCallStartMatch ? toolCallStartMatch.index! : -1,
                 len: toolCallStartMatch ? toolCallStartMatch[0].length : 0,
-                id: toolCallStartMatch ? toolCallStartMatch[1] : null,
+                id: toolCallStartMatch ? (toolCallStartMatch[1] || toolCallStartMatch[3]) : null,
                 name: toolCallStartMatch ? toolCallStartMatch[2] : "",
               },
               {
@@ -508,8 +537,10 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
 
             try {
               const data = JSON.parse(dataStr);
-              // Verbose logging for debugging
-              // console.log(`[DeepseekWebStream] SSE Data: ${dataStr}`);
+              // Verbose logging for continuing turns (debug second-turn tool_call parsing)
+              if (parentId) {
+                console.log(`[DeepseekWebStream] CONTINUING SSE: ${dataStr.slice(0, 300)}`);
+              }
 
               // Capture session/message continuity
               if (data.response_message_id) {

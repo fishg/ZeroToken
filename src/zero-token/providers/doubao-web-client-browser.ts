@@ -9,6 +9,7 @@ import {
   type RunningChrome,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
+import { getSharedBrowser, releaseSharedBrowser } from "./shared-browser.js";
 import type { ModelDefinitionConfig } from "../types.js";
 
 export interface DoubaoWebClientOptions {
@@ -70,77 +71,9 @@ export class DoubaoWebClientBrowser {
       return { browser: this.browser, page: this.page };
     }
 
-    const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
-
-    // If attachOnly is true, connect to existing Chrome instead of launching
-    if (browserConfig.attachOnly) {
-      console.log(`[Doubao Web Browser] Connecting to existing Chrome at ${profile.cdpUrl}`);
-
-      let wsUrl: string | null = null;
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(
-          `Failed to connect to Chrome at ${profile.cdpUrl}. ` +
-            `Make sure Chrome is running in debug mode`,
-        );
-      }
-
-      this.browser = (
-        await chromium.connectOverCDP(wsUrl, {
-          headers: getHeadersWithAuth(wsUrl),
-        })
-      ).contexts()[0]!;
-
-      // Find the Doubao page or create new one
-      const pages = this.browser.pages();
-      let doubaoPage = pages.find((p) => p.url().includes("doubao.com"));
-
-      if (doubaoPage) {
-        console.log(`[Doubao Web Browser] Found existing Doubao page: ${doubaoPage.url()}`);
-        this.page = doubaoPage;
-      } else {
-        console.log(`[Doubao Web Browser] No Doubao page found, creating new one...`);
-        this.page = await this.browser.newPage();
-        await this.page.goto("https://www.doubao.com/chat/", { waitUntil: "domcontentloaded" });
-      }
-
-      console.log(`[Doubao Web Browser] Connected to existing Chrome successfully`);
-    } else {
-      // Launch new Chrome (headless so no window pops up during API calls)
-      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
-      this.running = await launchOpenClawChrome(hiddenConfig, profile);
-
-      const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
-      let wsUrl: string | null = null;
-
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl}`);
-      }
-
-      this.browser = (
-        await chromium.connectOverCDP(wsUrl, {
-          headers: getHeadersWithAuth(wsUrl),
-        })
-      ).contexts()[0]!;
-
-      this.page = this.browser.pages()[0] || (await this.browser.newPage());
-      await this.page.goto("https://www.doubao.com/chat/", { waitUntil: "domcontentloaded" });
-    }
+    const { context, page } = await getSharedBrowser("Doubao Web Browser", "https://www.doubao.com/chat/");
+    this.browser = context;
+    this.page = page;
 
     // Set cookies
     const cookies = this.cookie.split(";").map((c) => {
@@ -327,10 +260,7 @@ export class DoubaoWebClientBrowser {
   }
 
   async close() {
-    if (this.running) {
-      await stopOpenClawChrome(this.running);
-      this.running = null;
-    }
+    await releaseSharedBrowser();
     this.browser = null;
     this.page = null;
   }

@@ -284,6 +284,10 @@ export function resolveBrowserConfig(
   const extraArgs = Array.isArray(cfg?.extraArgs)
     ? cfg.extraArgs.filter((arg): arg is string => typeof arg === "string" && arg.trim().length > 0)
     : [];
+  // Add default window size for auth browser windows (shared browser overrides with its own size)
+  if (!extraArgs.some(a => a.startsWith("--window-size"))) {
+    extraArgs.push("--window-size=1280,900");
+  }
 
   return {
     enabled,

@@ -9,6 +9,7 @@ import {
   type RunningChrome,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
+import { getSharedBrowser, releaseSharedBrowser } from "./shared-browser.js";
 import type { ModelDefinitionConfig } from "../types.js";
 
 export interface ChatGPTWebClientOptions {
@@ -53,79 +54,11 @@ export class ChatGPTWebClientBrowser {
       return { browser: this.browser, page: this.page };
     }
 
-    const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
+    const { context, page } = await getSharedBrowser("ChatGPT Web Browser", "https://chatgpt.com/");
+    this.browser = context;
+    this.page = page;
 
-    if (browserConfig.attachOnly) {
-      console.log(`[ChatGPT Web Browser] Connecting to existing Chrome at ${profile.cdpUrl}`);
-
-      let wsUrl: string | null = null;
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(
-          `Failed to connect to Chrome at ${profile.cdpUrl}. ` +
-            `Make sure Chrome is running in debug mode`,
-        );
-      }
-
-      this.browser = (
-        await chromium.connectOverCDP(wsUrl, {
-          headers: getHeadersWithAuth(wsUrl),
-        })
-      ).contexts()[0]!;
-
-      const pages = this.browser.pages();
-      const chatgptPage = pages.find((p) => p.url().includes("chatgpt.com"));
-
-      if (chatgptPage) {
-        console.log(`[ChatGPT Web Browser] Found existing ChatGPT page: ${chatgptPage.url()}`);
-        this.page = chatgptPage;
-      } else {
-        console.log(`[ChatGPT Web Browser] No ChatGPT page found, creating new one...`);
-        this.page = await this.browser.newPage();
-        await this.page.goto("https://chatgpt.com/", { waitUntil: "load" });
-      }
-
-      await this.ensureChatGptPageReady();
-      console.log(`[ChatGPT Web Browser] Connected to existing Chrome successfully`);
-    } else {
-      // Force headless so no browser window pops up during API calls
-      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
-      this.running = await launchOpenClawChrome(hiddenConfig, profile);
-
-      const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
-      let wsUrl: string | null = null;
-
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl}`);
-      }
-
-      this.browser = (
-        await chromium.connectOverCDP(wsUrl, {
-          headers: getHeadersWithAuth(wsUrl),
-        })
-      ).contexts()[0]!;
-
-      this.page = this.browser.pages()[0] || (await this.browser.newPage());
-      if (!this.page.url().includes("chatgpt.com")) {
-        await this.page.goto("https://chatgpt.com/", { waitUntil: "load" });
-      }
-      await this.ensureChatGptPageReady();
-    }
+    await this.ensureChatGptPageReady();
 
     const cookieStr = typeof this.cookie === "string" ? this.cookie.trim() : "";
     if (cookieStr && !cookieStr.startsWith("{")) {
@@ -517,10 +450,7 @@ export class ChatGPTWebClientBrowser {
   }
 
   async close() {
-    if (this.running) {
-      await stopOpenClawChrome(this.running);
-      this.running = null;
-    }
+    await releaseSharedBrowser();
     this.browser = null;
     this.page = null;
   }

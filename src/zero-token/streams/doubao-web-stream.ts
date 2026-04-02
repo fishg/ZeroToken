@@ -41,10 +41,9 @@ export function createDoubaoWebStreamFn(cookieOrJson: string): StreamFn {
         let toolPrompt = "";
 
         if (tools.length > 0) {
-          toolPrompt = "\n## Available Tools\n";
-          for (const tool of tools) {
-            toolPrompt += `- ${tool.name}: ${tool.description}\n`;
-          }
+          // The OpenClaw system prompt already includes full tool descriptions.
+          // We only need to append the XML calling format instruction.
+          toolPrompt = '\n\n[CRITICAL TOOL CALLING INSTRUCTION]\nYou have tools available. To call ANY tool, you MUST output this EXACT XML format:\n<tool_call id="unique_id" name="tool_name">{"param1": "value1", "param2": "value2"}</tool_call>\n\nExamples:\n<tool_call id="call_1" name="read">{"file_path": "D:\\\\Users\\\\111\\\\Desktop\\\\文件夹\\\\111.txt"}</tool_call>\n<tool_call id="call_2" name="exec">{"command": "echo hello > test.txt"}</tool_call>\n<tool_call id="call_3" name="write">{"file_path": "D:\\\\Users\\\\111\\\\Desktop\\\\文件夹\\\\111.txt", "content": "Hello World"}</tool_call>\n\nIMPORTANT: You CAN and SHOULD use tools to perform actions. Do NOT say you cannot do something - use the tools! Plain text descriptions will NOT execute. You MUST use the XML format above.';
         }
 
         // Build prompt based on conversation state
@@ -291,7 +290,7 @@ export function createDoubaoWebStreamFn(cookieOrJson: string): StreamFn {
             const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
             const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
             const toolCallStart = tagBuffer.match(
-              /<tool_call\s*(?:id=['"]?([^'"]+)['"]?\s*)?name=['"]?([^'"]+)['"]?\s*>/i,
+              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i,
             );
             const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
 
@@ -306,7 +305,7 @@ export function createDoubaoWebStreamFn(cookieOrJson: string): StreamFn {
                 type: "tool_start",
                 idx: toolCallStart?.index ?? -1,
                 len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1],
+                id: toolCallStart?.[1] || toolCallStart?.[3],
                 name: toolCallStart?.[2],
               },
               {
@@ -404,64 +403,135 @@ export function createDoubaoWebStreamFn(cookieOrJson: string): StreamFn {
           checkTags();
         };
 
-        const processLine = (line: string) => {
-          if (!line || !line.startsWith("data:")) {
-            return;
+        /** Try to parse a single JSON object and extract text delta */
+        const extractDeltaFromJson = (data: Record<string, unknown>): string => {
+          // Extract conversation ID
+          if (data.sessionId) {
+            sessionMap.set(sessionKey, data.sessionId as string);
+          }
+          if (data.conversation_id && data.conversation_id !== "0") {
+            sessionMap.set(sessionKey, data.conversation_id as string);
           }
 
-          const dataStr = line.slice(5).trim();
+          let delta = "";
+
+          // Handle Doubao's event-based response format
+          // event_type 2002 = message created, event_type 2003 = content delta
+          if (data.event_type === 2003 && data.event_data) {
+            try {
+              const eventData = JSON.parse(data.event_data as string);
+              delta = eventData.text || eventData.content || eventData.delta || "";
+            } catch {
+              delta = data.event_data as string;
+            }
+          } else if (data.event_data) {
+            try {
+              const eventData =
+                typeof data.event_data === "string"
+                  ? JSON.parse(data.event_data)
+                  : data.event_data;
+              delta =
+                eventData.text ||
+                eventData.content ||
+                eventData.delta ||
+                eventData.message?.content ||
+                "";
+            } catch {
+              // event_data is not JSON
+            }
+          }
+
+          // Also try standard format and direct {"text":"..."} format
+          if (!delta) {
+            delta = (data.choices as any)?.[0]?.delta?.content ?? (data.text as string) ?? (data.content as string) ?? (data.delta as string) ?? "";
+          }
+
+          return typeof delta === "string" ? delta : "";
+        };
+
+        /** Parse a line that may contain concatenated JSON objects */
+        const parseJsonObjects = (str: string): Record<string, unknown>[] => {
+          const results: Record<string, unknown>[] = [];
+          let i = 0;
+          while (i < str.length) {
+            // Skip whitespace
+            while (i < str.length && /\s/.test(str[i])) { i++; }
+            if (i >= str.length) { break; }
+            if (str[i] !== "{") { i++; continue; }
+
+            // Find matching closing brace
+            let depth = 0;
+            let start = i;
+            let inString = false;
+            let escape = false;
+            for (; i < str.length; i++) {
+              const c = str[i];
+              if (escape) { escape = false; continue; }
+              if (c === "\\") { escape = true; continue; }
+              if (c === '"') { inString = !inString; continue; }
+              if (inString) { continue; }
+              if (c === "{") { depth++; }
+              if (c === "}") { depth--; if (depth === 0) { i++; break; } }
+            }
+            if (depth === 0) {
+              const jsonStr = str.slice(start, i);
+              try {
+                const obj = JSON.parse(jsonStr);
+                if (obj && typeof obj === "object") {
+                  results.push(obj);
+                }
+              } catch { /* skip malformed */ }
+            }
+          }
+          return results;
+        };
+
+        const processLine = (line: string) => {
+          if (!line) { return; }
+
+          let dataStr: string;
+
+          if (line.startsWith("data:")) {
+            dataStr = line.slice(5).trim();
+          } else {
+            // Handle non-SSE format (NDJSON or concatenated JSON)
+            dataStr = line.trim();
+          }
+
           if (dataStr === "[DONE]" || !dataStr) {
             return;
           }
 
+          // Skip "suggest" objects and empty objects
+          if (dataStr.includes('"suggest"') || dataStr === "{}") {
+            return;
+          }
+
+          // Try to parse as single JSON first
           try {
             const data = JSON.parse(dataStr);
-
-            // Extract conversation ID
-            if (data.sessionId) {
-              sessionMap.set(sessionKey, data.sessionId);
-            }
-
-            // Handle Doubao's event-based response format
-            // event_type 2002 = message created, event_type 2003 = content delta
-            let delta = "";
-
-            if (data.event_type === 2003 && data.event_data) {
-              // Content delta event - extract text from event_data
-              try {
-                const eventData = JSON.parse(data.event_data);
-                delta = eventData.text || eventData.content || eventData.delta || "";
-              } catch {
-                delta = data.event_data;
-              }
-            } else if (data.event_data) {
-              // Try to parse event_data for content
-              try {
-                const eventData =
-                  typeof data.event_data === "string"
-                    ? JSON.parse(data.event_data)
-                    : data.event_data;
-                delta =
-                  eventData.text ||
-                  eventData.content ||
-                  eventData.delta ||
-                  eventData.message?.content ||
-                  "";
-              } catch {
-                // event_data is not JSON
-              }
-            }
-
-            // Also try standard format
-            if (!delta) {
-              delta = data.choices?.[0]?.delta?.content ?? data.text ?? data.content ?? data.delta;
-            }
-
-            if (typeof delta === "string" && delta) {
+            const delta = extractDeltaFromJson(data);
+            if (delta) {
               pushDelta(delta);
             }
+            return;
           } catch {
-            // Ignore parse errors
+            // Not valid single JSON - try concatenated JSON objects
+          }
+
+          // Handle concatenated JSON objects like {"text":"我"}{"text":"你"}
+          const objects = parseJsonObjects(dataStr);
+          const seen = new Set<string>(); // deduplicate (doubao sends each twice)
+          for (const obj of objects) {
+            // Skip suggest/empty objects
+            if ("suggest" in obj || Object.keys(obj).length === 0) {
+              continue;
+            }
+            const delta = extractDeltaFromJson(obj);
+            if (delta && !seen.has(delta)) {
+              seen.add(delta);
+              pushDelta(delta);
+            }
           }
         };
 

@@ -42,10 +42,7 @@ export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
         let toolPrompt = "";
 
         if (tools.length > 0) {
-          toolPrompt = "\n## Available Tools\n";
-          for (const tool of tools) {
-            toolPrompt += `- ${tool.name}: ${tool.description}\n`;
-          }
+          toolPrompt = '\n\n[CRITICAL TOOL CALLING INSTRUCTION]\nYou have tools available. To call ANY tool, you MUST output this EXACT XML format:\n<tool_call id="unique_id" name="tool_name">{"param1": "value1", "param2": "value2"}</tool_call>\n\nExamples:\n<tool_call id="call_1" name="read">{"file_path": "D:\\\\Users\\\\111\\\\Desktop\\\\文件夹\\\\111.txt"}</tool_call>\n<tool_call id="call_2" name="write">{"file_path": "D:\\\\Users\\\\111\\\\Desktop\\\\文件夹\\\\111.txt", "content": "Hello World"}</tool_call>\n<tool_call id="call_3" name="exec">{"command": "echo hello"}</tool_call>\n<tool_call id="call_4" name="exec">{"command": "python D:\\\\Users\\\\111\\\\Desktop\\\\hello.py"}</tool_call>\n\nRULES:\n1. Only use tools when the user EXPLICITLY requests file/system operations (create file, read file, run command, edit file, etc.). For questions, code writing, explanations, etc., reply directly in text WITHOUT calling any tool.\n2. ABSOLUTELY NO self-talk, reasoning, or planning. NEVER output "The user wants...", "Let me try...", etc.\n3. When calling a tool, output ONLY the <tool_call> XML tag. NOTHING else.\n4. After receiving a tool result, respond with a brief confirmation ONLY.\n5. For creating files with content, use the write tool. For creating empty files on Windows, use exec with New-Item.\n6. ALWAYS reply in the SAME language the user used. 如果用户说中文，你必须全程用中文回复。\n7. If a tool call fails, try a different approach silently.\n8. When user asks to run/execute a file or program, use the exec tool (e.g. exec with "python file.py", "node file.js", "code file.py"). NEVER tell the user to run it manually.';
         }
 
         // Build prompt based on conversation state
@@ -125,10 +122,17 @@ export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
           }
         }
 
-        // Add tool reminder for continuing conversations
-        if (toolPrompt && sessionId) {
-          prompt +=
-            '\n\n[SYSTEM HINT]: Keep in mind your available tools. To use a tool, you MUST output the EXACT XML format: <tool_call id="unique_id" name="tool_name">{"arg": "value"}</tool_call>. Using plain text to describe your action will FAIL to execute the tool.';
+        // Add tool reminder at END of prompt (both first turn and continuing)
+        const toolsAvailable = (context.tools || []).length > 0;
+        if (toolsAvailable) {
+          if (sessionId) {
+            // Continuing turn: send full tool format
+            prompt +=
+              '\n\n[CRITICAL TOOL CALLING INSTRUCTION]\nTo call ANY tool, you MUST output this EXACT XML format:\n<tool_call id="unique_id" name="tool_name">{"param1": "value1"}</tool_call>\n\nExamples:\n<tool_call id="call_1" name="exec">{"command": "python hello.py"}</tool_call>\n<tool_call id="call_2" name="write">{"file_path": "path", "content": "text"}</tool_call>\n\nRULES: Only use tools for explicit file/system operations. When user asks to run a file, use exec. No self-talk. Reply in user\'s language. 如果用户说中文，用中文回复。';
+          } else {
+            prompt +=
+              '\n\n[IMPORTANT REMINDER] Tool format: <tool_call id="call_1" name="tool_name">{"param": "value"}</tool_call>\nOnly use tools for explicit file/system operations. When user asks to run/execute a file, use exec tool.\nNo self-talk. Reply in user\'s language. 如果用户说中文，用中文回复。';
+          }
         }
 
         if (!prompt) {
@@ -280,7 +284,7 @@ export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
             const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
             const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
             const toolCallStart = tagBuffer.match(
-              /<tool_call\s*(?:id=['"]?([^'"]+)['"]?\s*)?name=['"]?([^'"]+)['"]?\s*>/i,
+              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i,
             );
             const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
 
@@ -295,7 +299,7 @@ export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
                 type: "tool_start",
                 idx: toolCallStart?.index ?? -1,
                 len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1],
+                id: toolCallStart?.[1] || toolCallStart?.[3],
                 name: toolCallStart?.[2],
               },
               {
@@ -350,7 +354,7 @@ export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
                   } catch (e) {
                     part.arguments = { raw: argStr };
                     console.error(
-                      `[Qwen Stream] Failed to parse JSON for tool call ${currentToolName}:`,
+                      `[KimiWebStream] Failed to parse JSON for tool call ${currentToolName}:`,
                       argStr,
                       "\nError:",
                       e,
@@ -409,8 +413,8 @@ export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
             const data = JSON.parse(dataStr);
 
             // Extract conversation ID
-            if (data.sessionId || data.sessionId) {
-              sessionMap.set(sessionKey, data.sessionId || data.sessionId);
+            if (data.sessionId || data.conversationId) {
+              sessionMap.set(sessionKey, data.sessionId || data.conversationId);
             }
 
             // Extract content delta - Qwen v2 uses choices[0].delta.content

@@ -37,10 +37,8 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
 
         let toolPrompt = "";
         if (tools.length > 0) {
-          toolPrompt = "\n## Available Tools\n";
-          for (const tool of tools) {
-            toolPrompt += `- ${tool.name}: ${tool.description}\n`;
-          }
+          // MiMo has strict 3000 char limit - keep tool prompt very concise
+          toolPrompt = '\n\n[工具格式] <tool_call id="call_1" name="工具名">{"参数":"值"}</tool_call>\n工具：read、write、exec、edit、browser\n例：<tool_call id="call_1" name="browser">{"action":"navigate","url":"https://baidu.com"}</tool_call>\n例：<tool_call id="call_2" name="exec">{"command":"python hello.py"}</tool_call>\n[规则] 用户要求操作文件、运行命令、打开浏览器时调用工具。写代码、回答问题直接文本回复。\n思考过程放在<think></think>内，回复只输出最终结果。用中文简短回复。';
         }
 
         let prompt = "";
@@ -118,20 +116,37 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
           }
         }
 
+        // Add tool reminder at END of prompt (both first turn and continuing)
+        const toolsAvailable = (context.tools || []).length > 0;
+        if (toolsAvailable) {
+          if (sessionId) {
+            prompt +=
+              '\n\n[工具格式] <tool_call id="call_1" name="工具名">{"参数":"值"}</tool_call>\n工具：read、write、exec、edit、browser\n例：<tool_call id="call_1" name="browser">{"action":"navigate","url":"https://baidu.com"}</tool_call>\n思考放<think></think>内，回复只输出结果。用中文。';
+          } else {
+            prompt +=
+              '\n\n[提醒] 工具：read、write、exec、edit、browser。格式：<tool_call id="call_1" name="exec">{"command":"命令"}</tool_call>\n思考放<think></think>内，回复只输出结果。用中文。';
+          }
+        }
+
         if (!prompt) {
           throw new Error("No message found to send to XiaomiMimo Web API");
         }
 
-        // MiMo Web API 限制非常严格
+        // MiMo Web API 限制非常严格，截断时保留工具指令和用户消息
         const MAX_PROMPT_LENGTH = 3000;
         if (prompt.length > MAX_PROMPT_LENGTH) {
           console.log(
             `[XiaomiMimoWebStream] Truncating from ${prompt.length} to ${MAX_PROMPT_LENGTH}`,
           );
-          // 只保留最后一个 User 消息
+          // 精简系统提示 + 工具指令 + 用户消息
+          const sysPrefix = '你是AI助手。思考过程放在<think></think>内，回复只输出最终结果，禁止自言自语。简短回复。';
+          const toolInst = toolPrompt || '';
           const userParts = prompt.split("User:");
           const lastUser = userParts[userParts.length - 1];
-          prompt = "你是一个AI助手。\n\nUser:" + (lastUser || "").slice(-MAX_PROMPT_LENGTH + 50);
+          const endReminder = toolsAvailable ? '\n[提醒]调用工具只输出XML标签，禁止自言自语，用中文简短回复。' : '';
+          const headerLen = sysPrefix.length + toolInst.length + endReminder.length + 20;
+          const remainingLen = MAX_PROMPT_LENGTH - headerLen;
+          prompt = "System: " + sysPrefix + toolInst + "\n\nUser:" + (lastUser || "").slice(-remainingLen) + endReminder;
         }
 
         console.log(`[XiaomiMimoWebStream] Starting run for session: ${sessionKey}`);
@@ -191,6 +206,13 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
         let currentToolName = "";
         let currentToolIndex = 0;
         let tagBuffer = "";
+        let totalTextEmitted = 0;
+        let currentEvent = "";
+        // MiMo self-talk filter: buffer text before tool calls,
+        // if tool call found → discard buffered text (self-talk)
+        // if no tool call by stream end → flush buffer as normal text
+        let hasSeenToolCall = false;
+        const preToolTextBuffer: string[] = [];
 
         const emitDelta = (
           type: "text" | "thinking" | "toolcall",
@@ -199,6 +221,12 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
         ) => {
           if (delta === "" && type !== "toolcall") {
             return;
+          }
+          // MiMo: buffer text until we know if tools will be called
+          if (toolsAvailable && type === "text" && !hasSeenToolCall) {
+            preToolTextBuffer.push(delta);
+            totalTextEmitted += delta.length;
+            return; // buffer, don't emit yet
           }
           const key = type === "toolcall" ? `tool_${currentToolIndex}` : type;
 
@@ -269,6 +297,10 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
           if (!delta) {
             return;
           }
+          // Filter junk tokens
+          if (delta === '[DONE]' || delta === '<|endoftext|>') {
+            return;
+          }
           if (forceType === "thinking") {
             emitDelta("thinking", delta);
             return;
@@ -279,7 +311,7 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
             const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
             const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
             const toolCallStart = tagBuffer.match(
-              /<tool_call\s*(?:id=['"]?([^'"]+)['"]?\s*)?name=['"]?([^'"]+)['"]?\s*>/i,
+              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i,
             );
             const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
 
@@ -294,7 +326,7 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
                 type: "tool_start",
                 idx: toolCallStart?.index ?? -1,
                 len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1],
+                id: toolCallStart?.[1] || toolCallStart?.[3],
                 name: toolCallStart?.[2],
               },
               {
@@ -326,6 +358,12 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
               } else if (first.type === "tool_start") {
                 currentMode = "tool_call";
                 currentToolName = first.name!;
+                // Tool call found → discard buffered self-talk
+                if (!hasSeenToolCall) {
+                  hasSeenToolCall = true;
+                  preToolTextBuffer.length = 0;
+                  console.log(`[XiaomiMimoWebStream] Tool call detected, discarded ${totalTextEmitted} chars of pre-tool text`);
+                }
                 emitDelta("toolcall", "", first.id);
               } else if (first.type === "tool_end") {
                 const index = indexMap.get(`tool_${currentToolIndex}`);
@@ -402,6 +440,10 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
             const event = line.slice(6).trim();
             if (event === "error") {
               currentMode = "error";
+            } else if (event === "dialogId") {
+              currentEvent = "dialogId";
+            } else {
+              currentEvent = event;
             }
             return;
           }
@@ -418,8 +460,18 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
           try {
             const data = JSON.parse(dataStr);
 
-            if (data.sessionId) {
-              sessionMap.set(sessionKey, data.sessionId);
+            // Capture conversationId from dialogId event
+            if (currentEvent === "dialogId" && data.content) {
+              const convId = String(data.content);
+              console.log(`[XiaomiMimoWebStream] Captured conversationId: ${convId}`);
+              sessionMap.set(sessionKey, convId);
+              currentEvent = "";
+              return; // Don't push dialogId as text content
+            }
+            currentEvent = "";
+
+            if (data.sessionId || data.conversationId) {
+              sessionMap.set(sessionKey, data.sessionId || data.conversationId);
             }
 
             // MiMo 格式: {"type":"text","content":"..."}
@@ -457,6 +509,86 @@ export function createXiaomiMimoWebStreamFn(cookieOrJson: string): StreamFn {
 
           for (const part of parts) {
             processLine(part.trim());
+          }
+        }
+
+        // If no tool call was made, flush buffered text as normal output
+        if (!hasSeenToolCall && preToolTextBuffer.length > 0) {
+          console.log(`[XiaomiMimoWebStream] No tool calls, flushing ${preToolTextBuffer.length} buffered text chunks`);
+          let fullText = preToolTextBuffer.join("");
+
+          // Post-processing: aggressively clean MiMo self-talk/reasoning
+          // MiMo is a small model that frequently dumps its entire chain-of-thought
+          if (fullText.length > 200) {
+            const selfTalkMarkers = [
+              '或许', '我认为', '我决定', '为了', '既然', '让我', '我应该',
+              '我需要', '我可以', '我将', '指令说', '用户说', '工具调用',
+              '系统提示', '回复草稿', '步骤', '计划', '假设', '风险',
+              '另一个想法', '为了简', '为了精确', '为了遵循', '最终回复',
+              '意思是', '可能', '看用户', '看提示', '在响应中', '在回复中',
+              '在这个', '对于', '作为AI', '作为MiMo', '这是一个矛盾',
+              '所以，', '但是，', '然后，', '现在，', '最终，',
+              '用户期望', '用户消息', '用户的消息', '用户可能',
+              '思考：', '思考过程', '推理', '分析',
+            ];
+            const lines = fullText.split('\n').filter(l => l.trim());
+            const selfTalkCount = lines.filter(l =>
+              selfTalkMarkers.some(m => l.includes(m))
+            ).length;
+
+            if (selfTalkCount > lines.length * 0.3) {
+              console.log(`[XiaomiMimoWebStream] Detected self-talk (${selfTalkCount}/${lines.length} lines), filtering`);
+
+              // Strategy 1: Look for last clean response block
+              const paragraphs = fullText.split(/\n\n+/);
+              let cleanIdx = -1;
+              for (let i = paragraphs.length - 1; i >= 0; i--) {
+                const p = paragraphs[i].trim();
+                if (!p) continue;
+                // Check if this paragraph is NOT self-talk
+                const isSelfTalk = selfTalkMarkers.some(m => p.includes(m));
+                if (!isSelfTalk && p.length > 5 && p.length < 500) {
+                  cleanIdx = i;
+                  break;
+                }
+              }
+
+              if (cleanIdx !== -1) {
+                fullText = paragraphs[cleanIdx].trim();
+                console.log(`[XiaomiMimoWebStream] Extracted clean paragraph (${fullText.length} chars)`);
+              } else {
+                // Strategy 2: Take the last sentence/line that isn't reasoning
+                const cleanLines = lines.filter(l => {
+                  const trimmed = l.trim();
+                  return trimmed.length > 2 && !selfTalkMarkers.some(m => trimmed.includes(m));
+                });
+                if (cleanLines.length > 0) {
+                  fullText = cleanLines[cleanLines.length - 1].trim();
+                  console.log(`[XiaomiMimoWebStream] Extracted last clean line (${fullText.length} chars)`);
+                } else {
+                  // Strategy 3: Just take the last non-empty line
+                  const lastLine = lines[lines.length - 1]?.trim() || '';
+                  fullText = lastLine || '操作完成。';
+                  console.log(`[XiaomiMimoWebStream] Fallback to last line`);
+                }
+              }
+            }
+          }
+
+          // Strip [DONE] markers that may leak into text
+          fullText = fullText.replace(/\[DONE\]/g, '').trim();
+
+          if (fullText) {
+            const key = "text";
+            if (!indexMap.has(key)) {
+              const index = nextIndex++;
+              indexMap.set(key, index);
+              contentParts[index] = { type: "text", text: "" };
+              stream.push({ type: "text_start", contentIndex: index, partial: createPartial() });
+            }
+            const index = indexMap.get(key)!;
+            (contentParts[index] as TextContent).text += fullText;
+            stream.push({ type: "text_delta", contentIndex: index, delta: fullText, partial: createPartial() });
           }
         }
 

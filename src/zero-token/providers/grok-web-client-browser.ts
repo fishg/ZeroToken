@@ -2,6 +2,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import { getHeadersWithAuth } from "./browser-cdp.js";
 import { getChromeWebSocketUrl, launchOpenClawChrome } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
+import { getSharedBrowser, releaseSharedBrowser } from "./shared-browser.js";
 
 export interface GrokWebClientOptions {
   cookie: string;
@@ -43,57 +44,9 @@ export class GrokWebClientBrowser {
       return;
     }
 
-    const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
-
-    let wsUrl: string | null = null;
-
-    if (browserConfig.attachOnly) {
-      console.log(`[Grok Web Browser] Connecting to existing Chrome at ${profile.cdpUrl}`);
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-      if (!wsUrl) {
-        throw new Error(
-          `Failed to connect to Chrome at ${profile.cdpUrl}. ` +
-            `Make sure Chrome is running in debug mode (./start-chrome-debug.sh)`,
-        );
-      }
-    } else {
-      // Force headless so no browser window pops up during API calls
-      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
-      const running = await launchOpenClawChrome(hiddenConfig, profile);
-      const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-      if (!wsUrl) {
-        throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl}`);
-      }
-    }
-
-    const connectedBrowser = await chromium.connectOverCDP(wsUrl, {
-      headers: getHeadersWithAuth(wsUrl),
-    });
-    this.browser = connectedBrowser;
-    this.context = connectedBrowser.contexts()[0];
-
-    const pages = this.context.pages();
-    const grokPage = pages.find((p) => p.url().includes("grok.com"));
-    if (grokPage) {
-      console.log(`[Grok Web Browser] Found existing Grok page`);
-      this.page = grokPage;
-    } else {
-      this.page = await this.context.newPage();
-      await this.page.goto("https://grok.com", { waitUntil: "domcontentloaded" });
-    }
+    const { context, page } = await getSharedBrowser("Grok Web Browser", "https://grok.com");
+    this.context = context;
+    this.page = page;
 
     const cookies = this.parseCookies();
     if (cookies.length > 0) {
@@ -503,18 +456,10 @@ export class GrokWebClientBrowser {
   }
 
   async close(): Promise<void> {
-    if (this.page) {
-      await this.page.close();
-      this.page = null;
-    }
-    if (this.context) {
-      await this.context.close();
-      this.context = null;
-    }
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
+    await releaseSharedBrowser();
+    this.page = null;
+    this.context = null;
+    this.browser = null;
     this.initialized = false;
   }
 }

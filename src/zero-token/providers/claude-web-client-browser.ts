@@ -9,6 +9,7 @@ import {
   type RunningChrome,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
+import { getSharedBrowser, releaseSharedBrowser } from "./shared-browser.js";
 import type { ModelDefinitionConfig } from "../types.js";
 
 export interface ClaudeWebClientOptions {
@@ -67,87 +68,11 @@ export class ClaudeWebClientBrowser {
       return { browser: this.browser, page: this.page };
     }
 
-    const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
+    const { context, page } = await getSharedBrowser("Claude Web Browser", "https://claude.ai/new");
+    this.browser = context;
+    this.page = page;
 
-    // If attachOnly is true, connect to existing Chrome instead of launching
-    if (browserConfig.attachOnly) {
-      console.log(`[Claude Web Browser] Connecting to existing Chrome at ${profile.cdpUrl}`);
-
-      let wsUrl: string | null = null;
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(
-          `Failed to connect to Chrome at ${profile.cdpUrl}. ` +
-            `Make sure Chrome is running in debug mode (./start-chrome-debug.sh)`,
-        );
-      }
-
-      this.browser = await chromium
-        .connectOverCDP(wsUrl, {
-          headers: getHeadersWithAuth(wsUrl),
-        })
-        .then((b) => b.contexts()[0]);
-
-      if (!this.browser) {
-        throw new Error("Failed to connect to Chrome browser context");
-      }
-
-      // Find the Claude.ai page or create new one
-      const pages = this.browser.pages();
-      let claudePage = pages.find((p) => p.url().includes("claude.ai"));
-
-      if (claudePage) {
-        console.log(`[Claude Web Browser] Found existing Claude page: ${claudePage.url()}`);
-        this.page = claudePage;
-      } else {
-        console.log(`[Claude Web Browser] No Claude page found, creating new one...`);
-        this.page = await this.browser.newPage();
-        await this.page.goto("https://claude.ai/new", { waitUntil: "domcontentloaded" });
-      }
-
-      console.log(`[Claude Web Browser] Connected to existing Chrome successfully`);
-    } else {
-      // Launch new Chrome (headless so no window pops up during API calls)
-      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
-      this.running = await launchOpenClawChrome(hiddenConfig, profile);
-
-      const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
-      let wsUrl: string | null = null;
-
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl}`);
-      }
-
-      this.browser = await chromium
-        .connectOverCDP(wsUrl, {
-          headers: getHeadersWithAuth(wsUrl),
-        })
-        .then((b) => b.contexts()[0]);
-
-      if (!this.browser) {
-        throw new Error("Failed to connect to Chrome browser context");
-      }
-
-      const pages = this.browser.pages();
-      this.page = pages[0] ?? (await this.browser.newPage());
-    }
-
-    // Set cookies (only if we have them and they're not already set)
+    // Set cookies
     const cookies = this.cookie.split(";").map((c) => {
       const [name, ...valueParts] = c.trim().split("=");
       return {
@@ -158,13 +83,7 @@ export class ClaudeWebClientBrowser {
       };
     });
 
-    if (this.browser) {
-      await this.browser.addCookies(cookies);
-    }
-
-    if (!this.browser || !this.page) {
-      throw new Error("Failed to initialize browser context");
-    }
+    await this.browser.addCookies(cookies);
 
     return { browser: this.browser, page: this.page };
   }
@@ -392,10 +311,7 @@ export class ClaudeWebClientBrowser {
   }
 
   async close() {
-    if (this.running) {
-      await stopOpenClawChrome(this.running);
-      this.running = null;
-    }
+    await releaseSharedBrowser();
     this.browser = null;
     this.page = null;
   }

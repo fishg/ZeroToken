@@ -9,6 +9,7 @@ import {
   type RunningChrome,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
+import { getSharedBrowser, releaseSharedBrowser } from "./shared-browser.js";
 import type { ModelDefinitionConfig } from "../types.js";
 
 export interface QwenCNWebClientOptions {
@@ -67,86 +68,9 @@ export class QwenCNWebClientBrowser {
       return { browser: this.browser, page: this.page };
     }
 
-    const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
-
-    if (browserConfig.attachOnly) {
-      console.log(`[Qwen CN Web Browser] Connecting to existing Chrome at ${profile.cdpUrl}`);
-
-      let wsUrl: string | null = null;
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(
-          `Failed to connect to Chrome at ${profile.cdpUrl}. ` +
-            `Make sure Chrome is running in debug mode`,
-        );
-      }
-
-      const cdpBrowser = await chromium.connectOverCDP(wsUrl, {
-        headers: getHeadersWithAuth(wsUrl),
-      });
-      const ctx = cdpBrowser.contexts()[0];
-      if (!ctx) {
-        throw new Error("CDP connection returned no browser context");
-      }
-      this.browser = ctx;
-
-      const pages = ctx.pages();
-      let qwenPage = pages.find((p) => p.url().includes("qianwen.com"));
-
-      if (qwenPage) {
-        console.log(`[Qwen CN Web Browser] Found existing Qwen CN page`);
-        this.page = qwenPage;
-      } else {
-        console.log(`[Qwen CN Web Browser] Creating new page`);
-        this.page = await ctx.newPage();
-        await this.page.goto("https://www.qianwen.com/", { waitUntil: "domcontentloaded" });
-      }
-
-      console.log(`[Qwen CN Web Browser] Connected successfully`);
-    } else {
-      // Force headless so no browser window pops up during API calls
-      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
-      this.running = await launchOpenClawChrome(hiddenConfig, profile);
-
-      const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
-      let wsUrl: string | null = null;
-
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl}`);
-      }
-
-      const cdpBrowser2 = await chromium.connectOverCDP(wsUrl, {
-        headers: getHeadersWithAuth(wsUrl),
-      });
-      const ctx2 = cdpBrowser2.contexts()[0];
-      if (!ctx2) {
-        throw new Error("CDP connection returned no browser context");
-      }
-      this.browser = ctx2;
-
-      this.page = ctx2.pages()[0] || (await ctx2.newPage());
-      await this.page.goto("https://chat2.qianwen.com/", { waitUntil: "domcontentloaded" });
-    }
-
-    const browserForCookies = this.browser;
-    if (!browserForCookies) {
-      throw new Error("Browser context missing after ensureBrowser setup");
-    }
+    const { context, page } = await getSharedBrowser("Qwen CN Web Browser", "https://chat2.qianwen.com/");
+    this.browser = context;
+    this.page = page;
 
     const cookies = this.cookie
       .split(";")
@@ -164,7 +88,7 @@ export class QwenCNWebClientBrowser {
 
     if (cookies.length > 0) {
       try {
-        await browserForCookies.addCookies(cookies);
+        await this.browser.addCookies(cookies);
       } catch (err) {
         console.warn(
           `[Qwen CN Web Browser] addCookies failed (page may already have session): ${err instanceof Error ? err.message : String(err)}`,
@@ -320,10 +244,7 @@ export class QwenCNWebClientBrowser {
   }
 
   async close() {
-    if (this.running) {
-      await stopOpenClawChrome(this.running);
-      this.running = null;
-    }
+    await releaseSharedBrowser();
     this.browser = null;
     this.page = null;
   }

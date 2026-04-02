@@ -332,7 +332,7 @@ export function createGeminiWebStreamFn(cookieOrJson: string): StreamFn {
           tagBuffer += delta;
           const checkTags = () => {
             const toolCallStart = tagBuffer.match(
-              /<tool_call\s*(?:id=['"]?([^'"]+)['"]?\s*)?name=['"]?([^'"]+)['"]?\s*>/i,
+              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i,
             );
             const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
             const indices = [
@@ -340,7 +340,7 @@ export function createGeminiWebStreamFn(cookieOrJson: string): StreamFn {
                 type: "tool_start" as const,
                 idx: toolCallStart?.index ?? -1,
                 len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1],
+                id: toolCallStart?.[1] || toolCallStart?.[3],
                 name: toolCallStart?.[2],
               },
               {

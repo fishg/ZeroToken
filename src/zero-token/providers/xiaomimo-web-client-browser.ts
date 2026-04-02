@@ -9,6 +9,7 @@ import {
   type RunningChrome,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
+import { getSharedBrowser, releaseSharedBrowser } from "./shared-browser.js";
 import type { ModelDefinitionConfig } from "../types.js";
 
 export interface XiaomiMimoWebClientOptions {
@@ -49,51 +50,9 @@ export class XiaomiMimoWebClientBrowser {
       return { browser: this.browser, page: this.page };
     }
 
-    const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
-
-    let wsUrl: string | null = null;
-    if (browserConfig.attachOnly) {
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-      if (!wsUrl) {
-        throw new Error(`Cannot connect to Chrome`);
-      }
-    } else {
-      // Force headless so no browser window pops up during API calls
-      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
-      this.running = await launchOpenClawChrome(hiddenConfig, profile);
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(`http://127.0.0.1:${this.running.cdpPort}`, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-      if (!wsUrl) {
-        throw new Error(`Cannot connect to Chrome`);
-      }
-    }
-
-    this.browser = (
-      await chromium.connectOverCDP(wsUrl, { headers: getHeadersWithAuth(wsUrl) })
-    ).contexts()[0]!;
-
-    const pages = this.browser.pages();
-    let mimoPage = pages.find((p) => p.url().includes("xiaomimimo.com"));
-    if (mimoPage) {
-      this.page = mimoPage;
-    } else {
-      this.page = await this.browser.newPage();
-    }
-
-    if (!this.page.url().includes("xiaomimimo.com")) {
-      await this.page.goto(`${XIAOMIMO_BASE_URL}/`, { waitUntil: "domcontentloaded" });
-    }
+    const { context, page } = await getSharedBrowser("XiaomiMimo Web Browser", `${XIAOMIMO_BASE_URL}/`);
+    this.browser = context;
+    this.page = page;
 
     // 设置 cookies
     const rawCookies = this.cookie
@@ -261,10 +220,7 @@ export class XiaomiMimoWebClientBrowser {
   }
 
   async close() {
-    if (this.running) {
-      await stopOpenClawChrome(this.running);
-      this.running = null;
-    }
+    await releaseSharedBrowser();
     this.browser = null;
     this.page = null;
   }

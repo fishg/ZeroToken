@@ -9,6 +9,7 @@ import {
   type RunningChrome,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
+import { getSharedBrowser, releaseSharedBrowser } from "./shared-browser.js";
 import type { ModelDefinitionConfig } from "../types.js";
 
 export interface QwenWebClientOptions {
@@ -47,76 +48,9 @@ export class QwenWebClientBrowser {
       return { browser: this.browser, page: this.page };
     }
 
-    const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
-
-    if (browserConfig.attachOnly) {
-      console.log(`[Qwen Web Browser] Connecting to existing Chrome at ${profile.cdpUrl}`);
-
-      let wsUrl: string | null = null;
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(
-          `Failed to connect to Chrome at ${profile.cdpUrl}. ` +
-            `Make sure Chrome is running in debug mode`,
-        );
-      }
-
-      this.browser = (
-        await chromium.connectOverCDP(wsUrl, {
-          headers: getHeadersWithAuth(wsUrl),
-        })
-      ).contexts()[0]!;
-
-      const pages = this.browser.pages();
-      let qwenPage = pages.find((p) => p.url().includes("qwen.ai"));
-
-      if (qwenPage) {
-        console.log(`[Qwen Web Browser] Found existing Qwen page`);
-        this.page = qwenPage;
-      } else {
-        console.log(`[Qwen Web Browser] Creating new page`);
-        this.page = await this.browser.newPage();
-        await this.page.goto("https://chat.qwen.ai/", { waitUntil: "domcontentloaded" });
-      }
-
-      console.log(`[Qwen Web Browser] Connected successfully`);
-    } else {
-      // Force headless so no browser window pops up during API calls
-      const hiddenConfig = { ...browserConfig, headless: false, extraArgs: [...(browserConfig.extraArgs || []), "--window-position=-32000,-32000", "--window-size=1,1"] };
-      this.running = await launchOpenClawChrome(hiddenConfig, profile);
-
-      const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
-      let wsUrl: string | null = null;
-
-      for (let i = 0; i < 10; i++) {
-        wsUrl = await getChromeWebSocketUrl(cdpUrl, 2000);
-        if (wsUrl) {
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      if (!wsUrl) {
-        throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl}`);
-      }
-
-      this.browser = (
-        await chromium.connectOverCDP(wsUrl, {
-          headers: getHeadersWithAuth(wsUrl),
-        })
-      ).contexts()[0]!;
-
-      this.page = this.browser.pages()[0] || (await this.browser.newPage());
-      // Navigate to Qwen so cookies and fetch work correctly
-      await this.page.goto("https://chat.qwen.ai/", { waitUntil: "domcontentloaded" });
-    }
+    const { context, page } = await getSharedBrowser("Qwen Web Browser", "https://chat.qwen.ai/");
+    this.browser = context;
+    this.page = page;
 
     const cookies = this.cookie.split(";").map((c) => {
       const [name, ...valueParts] = c.trim().split("=");
@@ -365,10 +299,7 @@ export class QwenWebClientBrowser {
   }
 
   async close() {
-    if (this.running) {
-      await stopOpenClawChrome(this.running);
-      this.running = null;
-    }
+    await releaseSharedBrowser();
     this.browser = null;
     this.page = null;
   }
