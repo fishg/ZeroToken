@@ -71,16 +71,20 @@ export async function getSharedBrowser(providerLabel: string, targetUrl: string)
   // Launch shared Chrome if not already running
   if (!sharedRunning || !sharedBrowser) {
     console.log(`[${providerLabel}] Launching shared Chrome...`);
-    const hiddenConfig = {
+    // Keep the browser visible so OpenClaw's browser tool can reuse it.
+    // Previously hidden at (-32000,-32000) with 1x1 size, but this made
+    // browser tool pages invisible to the user.
+    const visibleConfig = {
       ...browserConfig,
       headless: false,
       extraArgs: [
-        ...(browserConfig.extraArgs || []),
-        "--window-position=-32000,-32000",
-        "--window-size=1,1",
+        ...(browserConfig.extraArgs || []).filter(
+          (a: string) => !a.startsWith("--window-position") && !a.startsWith("--window-size")
+        ),
+        "--start-maximized",
       ],
     };
-    sharedRunning = await launchOpenClawChrome(hiddenConfig, profile);
+    sharedRunning = await launchOpenClawChrome(visibleConfig, profile);
 
     const cdpUrl = `http://127.0.0.1:${sharedRunning.cdpPort}`;
     let wsUrl: string | null = null;

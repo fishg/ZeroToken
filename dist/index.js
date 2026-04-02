@@ -2063,16 +2063,17 @@ async function getSharedBrowser(providerLabel, targetUrl) {
   }
   if (!sharedRunning || !sharedBrowser) {
     console.log(`[${providerLabel}] Launching shared Chrome...`);
-    const hiddenConfig = {
+    const visibleConfig = {
       ...browserConfig,
       headless: false,
       extraArgs: [
-        ...browserConfig.extraArgs || [],
-        "--window-position=-32000,-32000",
-        "--window-size=1,1"
+        ...(browserConfig.extraArgs || []).filter(
+          (a) => !a.startsWith("--window-position") && !a.startsWith("--window-size")
+        ),
+        "--start-maximized"
       ]
     };
-    sharedRunning = await launchOpenClawChrome(hiddenConfig, profile);
+    sharedRunning = await launchOpenClawChrome(visibleConfig, profile);
     const cdpUrl = `http://127.0.0.1:${sharedRunning.cdpPort}`;
     let wsUrl = null;
     for (let i = 0; i < 10; i++) {
