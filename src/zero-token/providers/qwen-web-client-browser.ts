@@ -88,7 +88,9 @@ export class QwenWebClientBrowser {
 
       console.log(`[Qwen Web Browser] Connected successfully`);
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      // Force headless so no browser window pops up during API calls
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
 
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl: string | null = null;
@@ -112,6 +114,8 @@ export class QwenWebClientBrowser {
       ).contexts()[0]!;
 
       this.page = this.browser.pages()[0] || (await this.browser.newPage());
+      // Navigate to Qwen so cookies and fetch work correctly
+      await this.page.goto("https://chat.qwen.ai/", { waitUntil: "domcontentloaded" });
     }
 
     const cookies = this.cookie.split(";").map((c) => {

@@ -173,6 +173,7 @@ export async function discoverDeepseekWebModels(params?: {
       cost: DEEPSEEK_WEB_DEFAULT_COST,
       contextWindow: DEEPSEEK_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true },
     },
     {
       id: "deepseek-reasoner",
@@ -182,6 +183,7 @@ export async function discoverDeepseekWebModels(params?: {
       cost: DEEPSEEK_WEB_DEFAULT_COST,
       contextWindow: DEEPSEEK_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true },
     },
     {
       id: "deepseek-chat-search",
@@ -191,6 +193,7 @@ export async function discoverDeepseekWebModels(params?: {
       cost: DEEPSEEK_WEB_DEFAULT_COST,
       contextWindow: DEEPSEEK_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true },
     },
     {
       id: "deepseek-reasoner-search",
@@ -200,6 +203,7 @@ export async function discoverDeepseekWebModels(params?: {
       cost: DEEPSEEK_WEB_DEFAULT_COST,
       contextWindow: DEEPSEEK_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true },
     },
   ];
 }
@@ -211,7 +215,7 @@ export async function buildDeepseekWebProvider(params?: {
   const models = await discoverDeepseekWebModels(params);
   return {
     baseUrl: DEEPSEEK_WEB_BASE_URL,
-    api: "deepseek-web",
+    api: "openai-completions",
     models,
   };
 }
@@ -240,6 +244,7 @@ export async function discoverDoubaoWebModels(params?: {
       cost: DOUBAO_WEB_DEFAULT_COST,
       contextWindow: DOUBAO_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: DOUBAO_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true },
     },
     {
       id: "doubao-pro",
@@ -249,6 +254,7 @@ export async function discoverDoubaoWebModels(params?: {
       cost: DOUBAO_WEB_DEFAULT_COST,
       contextWindow: DOUBAO_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: DOUBAO_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true },
     },
   ];
 }
@@ -260,7 +266,7 @@ export async function buildDoubaoWebProvider(params?: {
   const models = await discoverDoubaoWebModels(params);
   return {
     baseUrl: DOUBAO_WEB_BASE_URL,
-    api: "doubao-web",
+    api: "openai-completions",
     models,
   };
 }
@@ -291,6 +297,7 @@ export async function discoverClaudeWebModels(params?: {
       cost: CLAUDE_WEB_DEFAULT_COST,
       contextWindow: CLAUDE_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: CLAUDE_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true },
     },
     {
       id: "claude-opus-4-6",
@@ -300,6 +307,7 @@ export async function discoverClaudeWebModels(params?: {
       cost: CLAUDE_WEB_DEFAULT_COST,
       contextWindow: CLAUDE_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: 16384,
+      compat: { supportsTools: true },
     },
     {
       id: "claude-haiku-4-6",
@@ -309,6 +317,7 @@ export async function discoverClaudeWebModels(params?: {
       cost: CLAUDE_WEB_DEFAULT_COST,
       contextWindow: CLAUDE_WEB_DEFAULT_CONTEXT_WINDOW,
       maxTokens: CLAUDE_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true },
     },
   ];
 }
@@ -320,7 +329,7 @@ export async function buildClaudeWebProvider(params?: {
   const models = await discoverClaudeWebModels(params);
   return {
     baseUrl: CLAUDE_WEB_BASE_URL,
-    api: "claude-web",
+    api: "openai-completions",
     models,
   };
 }
@@ -331,7 +340,7 @@ export async function buildChatGPTWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: CHATGPT_WEB_BASE_URL,
-    api: "chatgpt-web",
+    api: "openai-completions",
     models: [
       {
         id: "gpt-4",
@@ -341,6 +350,7 @@ export async function buildChatGPTWebProvider(_params?: {
         cost: CHATGPT_WEB_DEFAULT_COST,
         contextWindow: CHATGPT_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: CHATGPT_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "gpt-4-turbo",
@@ -350,6 +360,7 @@ export async function buildChatGPTWebProvider(_params?: {
         cost: CHATGPT_WEB_DEFAULT_COST,
         contextWindow: CHATGPT_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: CHATGPT_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "gpt-3.5-turbo",
@@ -359,6 +370,7 @@ export async function buildChatGPTWebProvider(_params?: {
         cost: CHATGPT_WEB_DEFAULT_COST,
         contextWindow: 16000,
         maxTokens: 4096,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -370,7 +382,7 @@ export async function buildQwenWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: QWEN_WEB_BASE_URL,
-    api: "qwen-web",
+    api: "openai-completions",
     models: [
       {
         id: "qwen3.5-plus",
@@ -380,6 +392,7 @@ export async function buildQwenWebProvider(_params?: {
         cost: QWEN_WEB_DEFAULT_COST,
         contextWindow: QWEN_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "qwen3.5-turbo",
@@ -389,6 +402,7 @@ export async function buildQwenWebProvider(_params?: {
         cost: QWEN_WEB_DEFAULT_COST,
         contextWindow: QWEN_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -400,7 +414,7 @@ export async function buildQwenCNWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: QWEN_CN_WEB_BASE_URL,
-    api: "qwen-cn-web",
+    api: "openai-completions",
     models: [
       {
         id: "Qwen3.5-Plus",
@@ -410,6 +424,7 @@ export async function buildQwenCNWebProvider(_params?: {
         cost: QWEN_CN_WEB_DEFAULT_COST,
         contextWindow: QWEN_CN_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: QWEN_CN_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "Qwen3.5-Turbo",
@@ -419,6 +434,7 @@ export async function buildQwenCNWebProvider(_params?: {
         cost: QWEN_CN_WEB_DEFAULT_COST,
         contextWindow: QWEN_CN_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: QWEN_CN_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -430,7 +446,7 @@ export async function buildKimiWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: KIMI_WEB_BASE_URL,
-    api: "kimi-web",
+    api: "openai-completions",
     models: [
       {
         id: "moonshot-v1-8k",
@@ -440,6 +456,7 @@ export async function buildKimiWebProvider(_params?: {
         cost: KIMI_WEB_DEFAULT_COST,
         contextWindow: 8000,
         maxTokens: 4096,
+        compat: { supportsTools: true },
       },
       {
         id: "moonshot-v1-32k",
@@ -449,6 +466,7 @@ export async function buildKimiWebProvider(_params?: {
         cost: KIMI_WEB_DEFAULT_COST,
         contextWindow: KIMI_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: KIMI_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "moonshot-v1-128k",
@@ -458,6 +476,7 @@ export async function buildKimiWebProvider(_params?: {
         cost: KIMI_WEB_DEFAULT_COST,
         contextWindow: 128000,
         maxTokens: 4096,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -469,7 +488,7 @@ export async function buildGeminiWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: GEMINI_WEB_BASE_URL,
-    api: "gemini-web",
+    api: "openai-completions",
     models: [
       {
         id: "gemini-pro",
@@ -479,6 +498,7 @@ export async function buildGeminiWebProvider(_params?: {
         cost: GEMINI_WEB_DEFAULT_COST,
         contextWindow: GEMINI_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: GEMINI_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "gemini-ultra",
@@ -488,6 +508,7 @@ export async function buildGeminiWebProvider(_params?: {
         cost: GEMINI_WEB_DEFAULT_COST,
         contextWindow: GEMINI_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: GEMINI_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -499,7 +520,7 @@ export async function buildGrokWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: GROK_WEB_BASE_URL,
-    api: "grok-web",
+    api: "openai-completions",
     models: [
       {
         id: "grok-1",
@@ -509,6 +530,7 @@ export async function buildGrokWebProvider(_params?: {
         cost: GROK_WEB_DEFAULT_COST,
         contextWindow: GROK_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: GROK_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "grok-2",
@@ -518,6 +540,7 @@ export async function buildGrokWebProvider(_params?: {
         cost: GROK_WEB_DEFAULT_COST,
         contextWindow: GROK_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: GROK_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -529,7 +552,7 @@ export async function buildZWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: Z_WEB_BASE_URL,
-    api: "glm-web",
+    api: "openai-completions",
     models: [
       {
         id: "glm-4-plus",
@@ -539,6 +562,7 @@ export async function buildZWebProvider(_params?: {
         cost: Z_WEB_DEFAULT_COST,
         contextWindow: Z_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: Z_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "glm-4-think",
@@ -548,6 +572,7 @@ export async function buildZWebProvider(_params?: {
         cost: Z_WEB_DEFAULT_COST,
         contextWindow: Z_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: Z_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -559,7 +584,7 @@ export async function buildGlmIntlWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: GLM_INTL_WEB_BASE_URL,
-    api: "glm-intl-web",
+    api: "openai-completions",
     models: [
       {
         id: "glm-4-plus",
@@ -569,6 +594,7 @@ export async function buildGlmIntlWebProvider(_params?: {
         cost: GLM_INTL_WEB_DEFAULT_COST,
         contextWindow: GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
       {
         id: "glm-4-think",
@@ -578,6 +604,7 @@ export async function buildGlmIntlWebProvider(_params?: {
         cost: GLM_INTL_WEB_DEFAULT_COST,
         contextWindow: GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -589,7 +616,7 @@ export async function buildPerplexityWebProvider(_params?: {
 }): Promise<ProviderConfig> {
   return {
     baseUrl: PERPLEXITY_WEB_BASE_URL,
-    api: "perplexity-web",
+    api: "openai-completions",
     models: [
       {
         id: "perplexity-web",
@@ -599,6 +626,7 @@ export async function buildPerplexityWebProvider(_params?: {
         cost: PERPLEXITY_WEB_DEFAULT_COST,
         contextWindow: PERPLEXITY_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: 4096,
+        compat: { supportsTools: true },
       },
       {
         id: "perplexity-pro",
@@ -608,6 +636,7 @@ export async function buildPerplexityWebProvider(_params?: {
         cost: PERPLEXITY_WEB_DEFAULT_COST,
         contextWindow: PERPLEXITY_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: 8192,
+        compat: { supportsTools: true },
       },
     ],
   };
@@ -619,7 +648,7 @@ export function buildXiaomiMimoWebProvider(_params?: {
 }): ProviderConfig {
   return {
     baseUrl: XIAOMIMO_WEB_BASE_URL,
-    api: "xiaomimo-web",
+    api: "openai-completions",
     models: [
       {
         id: "xiaomimo-chat",
@@ -629,6 +658,7 @@ export function buildXiaomiMimoWebProvider(_params?: {
         cost: XIAOMIMO_WEB_DEFAULT_COST,
         contextWindow: XIAOMIMO_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: XIAOMIMO_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true },
       },
     ],
   };

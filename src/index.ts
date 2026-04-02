@@ -1,10 +1,12 @@
 import type { StreamFn } from "@mariozechner/pi-agent-core";
+import { registerApiProvider, getApiProvider } from "@mariozechner/pi-ai";
 import {
   emptyPluginConfigSchema,
   type OpenClawPluginApi,
   type ProviderAuthContext,
   type ProviderAuthResult,
 } from "openclaw/plugin-sdk/core";
+import { ZERO_TOKEN_PROVIDER_IDS } from "./zero-token/bridge/web-providers.js";
 import {
   buildChatGPTWebProvider,
   buildClaudeWebProvider,
@@ -382,8 +384,58 @@ const zeroTokenPlugin = {
   description: "Use browser-authenticated web models without standard API keys.",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {
+    // Build a set of zero-token provider IDs for quick lookup
+    const webProviderIds = new Set(WEB_PROVIDERS.map((d) => d.id));
+    const webProviderMap = new Map(WEB_PROVIDERS.map((d) => [d.id, d]));
+
     for (const desc of WEB_PROVIDERS) {
       api.registerProvider(buildRegisteredProvider(api, desc));
+    }
+
+    // Wrap the built-in "openai-completions" API provider so that requests targeting
+    // a zero-token web provider are intercepted and routed through our custom stream
+    // function instead of the default OpenAI-compatible HTTP transport.
+    // This is necessary because OpenClaw's gateway always uses streamSimple (which
+    // dispatches via model.api), and config validation only accepts standard api values.
+    const builtinProvider = getApiProvider("openai-completions");
+    console.log(`[zero-token] builtinProvider found: ${!!builtinProvider}`);
+    if (builtinProvider) {
+      const originalStream = builtinProvider.stream;
+      const originalStreamSimple = builtinProvider.streamSimple;
+
+      const makeInterceptor = (original: StreamFn): StreamFn => {
+        return async (model, context, options) => {
+          const providerId =
+            typeof model.provider === "string" ? model.provider.trim() : "";
+          console.log(`[zero-token] interceptor called: model.provider="${providerId}", model.api="${model.api}", model.id="${model.id}", isWebProvider=${webProviderIds.has(providerId)}`);
+          if (webProviderIds.has(providerId)) {
+            const desc = webProviderMap.get(providerId)!;
+            // Resolve credentials
+            const resolved = await api.runtime.modelAuth.resolveApiKeyForProvider({
+              provider: desc.id,
+              cfg: api.runtime.config,
+            });
+            const apiKey = resolved.apiKey?.trim();
+            if (!apiKey) {
+              throw new Error(
+                `No browser-auth credentials found for provider "${desc.id}".`,
+              );
+            }
+            return desc.createStreamFn(apiKey)(model, context, options);
+          }
+          // Not a zero-token provider, use the original handler
+          return original(model, context, options);
+        };
+      };
+
+      // Re-register the provider with our interceptors instead of modifying
+      // the existing object (which may be frozen/sealed).
+      registerApiProvider({
+        api: "openai-completions",
+        stream: makeInterceptor(originalStream),
+        streamSimple: makeInterceptor(originalStreamSimple),
+      });
+      console.log(`[zero-token] re-registered openai-completions with interceptor`);
     }
   },
 };

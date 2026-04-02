@@ -95,7 +95,9 @@ export class ChatGPTWebClientBrowser {
       await this.ensureChatGptPageReady();
       console.log(`[ChatGPT Web Browser] Connected to existing Chrome successfully`);
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      // Force headless so no browser window pops up during API calls
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
 
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl: string | null = null;

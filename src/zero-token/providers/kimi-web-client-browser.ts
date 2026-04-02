@@ -80,7 +80,9 @@ export class KimiWebClientBrowser {
         await this.page.goto(`${this.baseUrl}/`, { waitUntil: "domcontentloaded" });
       }
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      // Force headless so no browser window pops up during API calls
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl: string | null = null;
       for (let i = 0; i < 10; i++) {
@@ -98,6 +100,7 @@ export class KimiWebClientBrowser {
         await chromium.connectOverCDP(wsUrl, { headers: getHeadersWithAuth(wsUrl) })
       ).contexts()[0]!;
       this.page = this.browser.pages()[0] || (await this.browser.newPage());
+      await this.page.goto("https://www.kimi.com/", { waitUntil: "domcontentloaded" });
     }
 
     if (this.cookie.trim()) {

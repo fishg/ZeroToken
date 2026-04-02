@@ -2432,7 +2432,8 @@ var init_claude_web_client_browser = __esm({
           }
           console.log(`[Claude Web Browser] Connected to existing Chrome successfully`);
         } else {
-          this.running = await launchOpenClawChrome(browserConfig, profile);
+          const headlessConfig = { ...browserConfig, headless: true };
+          this.running = await launchOpenClawChrome(headlessConfig, profile);
           const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
           let wsUrl = null;
           for (let i = 0; i < 10; i++) {
@@ -2683,6 +2684,7 @@ var init_claude_web_client_browser = __esm({
 });
 
 // src/index.ts
+import { registerApiProvider, getApiProvider } from "@mariozechner/pi-ai";
 import {
   emptyPluginConfigSchema
 } from "openclaw/plugin-sdk/core";
@@ -2819,7 +2821,8 @@ async function discoverDeepseekWebModels(params) {
       input: ["text"],
       cost: DEEPSEEK_WEB_DEFAULT_COST,
       contextWindow: DEEPSEEK_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS
+      maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true }
     },
     {
       id: "deepseek-reasoner",
@@ -2828,7 +2831,8 @@ async function discoverDeepseekWebModels(params) {
       input: ["text"],
       cost: DEEPSEEK_WEB_DEFAULT_COST,
       contextWindow: DEEPSEEK_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS
+      maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true }
     },
     {
       id: "deepseek-chat-search",
@@ -2837,7 +2841,8 @@ async function discoverDeepseekWebModels(params) {
       input: ["text"],
       cost: DEEPSEEK_WEB_DEFAULT_COST,
       contextWindow: DEEPSEEK_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS
+      maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true }
     },
     {
       id: "deepseek-reasoner-search",
@@ -2846,7 +2851,8 @@ async function discoverDeepseekWebModels(params) {
       input: ["text"],
       cost: DEEPSEEK_WEB_DEFAULT_COST,
       contextWindow: DEEPSEEK_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS
+      maxTokens: DEEPSEEK_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true }
     }
   ];
 }
@@ -2854,7 +2860,7 @@ async function buildDeepseekWebProvider(params) {
   const models = await discoverDeepseekWebModels(params);
   return {
     baseUrl: DEEPSEEK_WEB_BASE_URL,
-    api: "deepseek-web",
+    api: "openai-completions",
     models
   };
 }
@@ -2877,7 +2883,8 @@ async function discoverDoubaoWebModels(params) {
       input: ["text"],
       cost: DOUBAO_WEB_DEFAULT_COST,
       contextWindow: DOUBAO_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: DOUBAO_WEB_DEFAULT_MAX_TOKENS
+      maxTokens: DOUBAO_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true }
     },
     {
       id: "doubao-pro",
@@ -2886,7 +2893,8 @@ async function discoverDoubaoWebModels(params) {
       input: ["text"],
       cost: DOUBAO_WEB_DEFAULT_COST,
       contextWindow: DOUBAO_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: DOUBAO_WEB_DEFAULT_MAX_TOKENS
+      maxTokens: DOUBAO_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true }
     }
   ];
 }
@@ -2894,7 +2902,7 @@ async function buildDoubaoWebProvider(params) {
   const models = await discoverDoubaoWebModels(params);
   return {
     baseUrl: DOUBAO_WEB_BASE_URL,
-    api: "doubao-web",
+    api: "openai-completions",
     models
   };
 }
@@ -2919,7 +2927,8 @@ async function discoverClaudeWebModels(params) {
       input: ["text", "image"],
       cost: CLAUDE_WEB_DEFAULT_COST,
       contextWindow: CLAUDE_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: CLAUDE_WEB_DEFAULT_MAX_TOKENS
+      maxTokens: CLAUDE_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true }
     },
     {
       id: "claude-opus-4-6",
@@ -2928,7 +2937,8 @@ async function discoverClaudeWebModels(params) {
       input: ["text", "image"],
       cost: CLAUDE_WEB_DEFAULT_COST,
       contextWindow: CLAUDE_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: 16384
+      maxTokens: 16384,
+      compat: { supportsTools: true }
     },
     {
       id: "claude-haiku-4-6",
@@ -2937,7 +2947,8 @@ async function discoverClaudeWebModels(params) {
       input: ["text", "image"],
       cost: CLAUDE_WEB_DEFAULT_COST,
       contextWindow: CLAUDE_WEB_DEFAULT_CONTEXT_WINDOW,
-      maxTokens: CLAUDE_WEB_DEFAULT_MAX_TOKENS
+      maxTokens: CLAUDE_WEB_DEFAULT_MAX_TOKENS,
+      compat: { supportsTools: true }
     }
   ];
 }
@@ -2945,14 +2956,14 @@ async function buildClaudeWebProvider(params) {
   const models = await discoverClaudeWebModels(params);
   return {
     baseUrl: CLAUDE_WEB_BASE_URL,
-    api: "claude-web",
+    api: "openai-completions",
     models
   };
 }
 async function buildChatGPTWebProvider(_params) {
   return {
     baseUrl: CHATGPT_WEB_BASE_URL,
-    api: "chatgpt-web",
+    api: "openai-completions",
     models: [
       {
         id: "gpt-4",
@@ -2961,7 +2972,8 @@ async function buildChatGPTWebProvider(_params) {
         input: ["text", "image"],
         cost: CHATGPT_WEB_DEFAULT_COST,
         contextWindow: CHATGPT_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: CHATGPT_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: CHATGPT_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "gpt-4-turbo",
@@ -2970,7 +2982,8 @@ async function buildChatGPTWebProvider(_params) {
         input: ["text", "image"],
         cost: CHATGPT_WEB_DEFAULT_COST,
         contextWindow: CHATGPT_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: CHATGPT_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: CHATGPT_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "gpt-3.5-turbo",
@@ -2979,7 +2992,8 @@ async function buildChatGPTWebProvider(_params) {
         input: ["text"],
         cost: CHATGPT_WEB_DEFAULT_COST,
         contextWindow: 16e3,
-        maxTokens: 4096
+        maxTokens: 4096,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -2987,7 +3001,7 @@ async function buildChatGPTWebProvider(_params) {
 async function buildQwenWebProvider(_params) {
   return {
     baseUrl: QWEN_WEB_BASE_URL,
-    api: "qwen-web",
+    api: "openai-completions",
     models: [
       {
         id: "qwen3.5-plus",
@@ -2996,7 +3010,8 @@ async function buildQwenWebProvider(_params) {
         input: ["text"],
         cost: QWEN_WEB_DEFAULT_COST,
         contextWindow: QWEN_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "qwen3.5-turbo",
@@ -3005,7 +3020,8 @@ async function buildQwenWebProvider(_params) {
         input: ["text"],
         cost: QWEN_WEB_DEFAULT_COST,
         contextWindow: QWEN_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -3013,7 +3029,7 @@ async function buildQwenWebProvider(_params) {
 async function buildQwenCNWebProvider(_params) {
   return {
     baseUrl: QWEN_CN_WEB_BASE_URL,
-    api: "qwen-cn-web",
+    api: "openai-completions",
     models: [
       {
         id: "Qwen3.5-Plus",
@@ -3022,7 +3038,8 @@ async function buildQwenCNWebProvider(_params) {
         input: ["text"],
         cost: QWEN_CN_WEB_DEFAULT_COST,
         contextWindow: QWEN_CN_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: QWEN_CN_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: QWEN_CN_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "Qwen3.5-Turbo",
@@ -3031,7 +3048,8 @@ async function buildQwenCNWebProvider(_params) {
         input: ["text"],
         cost: QWEN_CN_WEB_DEFAULT_COST,
         contextWindow: QWEN_CN_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: QWEN_CN_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: QWEN_CN_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -3039,7 +3057,7 @@ async function buildQwenCNWebProvider(_params) {
 async function buildKimiWebProvider(_params) {
   return {
     baseUrl: KIMI_WEB_BASE_URL,
-    api: "kimi-web",
+    api: "openai-completions",
     models: [
       {
         id: "moonshot-v1-8k",
@@ -3048,7 +3066,8 @@ async function buildKimiWebProvider(_params) {
         input: ["text"],
         cost: KIMI_WEB_DEFAULT_COST,
         contextWindow: 8e3,
-        maxTokens: 4096
+        maxTokens: 4096,
+        compat: { supportsTools: true }
       },
       {
         id: "moonshot-v1-32k",
@@ -3057,7 +3076,8 @@ async function buildKimiWebProvider(_params) {
         input: ["text"],
         cost: KIMI_WEB_DEFAULT_COST,
         contextWindow: KIMI_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: KIMI_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: KIMI_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "moonshot-v1-128k",
@@ -3066,7 +3086,8 @@ async function buildKimiWebProvider(_params) {
         input: ["text"],
         cost: KIMI_WEB_DEFAULT_COST,
         contextWindow: 128e3,
-        maxTokens: 4096
+        maxTokens: 4096,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -3074,7 +3095,7 @@ async function buildKimiWebProvider(_params) {
 async function buildGeminiWebProvider(_params) {
   return {
     baseUrl: GEMINI_WEB_BASE_URL,
-    api: "gemini-web",
+    api: "openai-completions",
     models: [
       {
         id: "gemini-pro",
@@ -3083,7 +3104,8 @@ async function buildGeminiWebProvider(_params) {
         input: ["text", "image"],
         cost: GEMINI_WEB_DEFAULT_COST,
         contextWindow: GEMINI_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: GEMINI_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: GEMINI_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "gemini-ultra",
@@ -3092,7 +3114,8 @@ async function buildGeminiWebProvider(_params) {
         input: ["text", "image"],
         cost: GEMINI_WEB_DEFAULT_COST,
         contextWindow: GEMINI_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: GEMINI_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: GEMINI_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -3100,7 +3123,7 @@ async function buildGeminiWebProvider(_params) {
 async function buildGrokWebProvider(_params) {
   return {
     baseUrl: GROK_WEB_BASE_URL,
-    api: "grok-web",
+    api: "openai-completions",
     models: [
       {
         id: "grok-1",
@@ -3109,7 +3132,8 @@ async function buildGrokWebProvider(_params) {
         input: ["text"],
         cost: GROK_WEB_DEFAULT_COST,
         contextWindow: GROK_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: GROK_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: GROK_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "grok-2",
@@ -3118,7 +3142,8 @@ async function buildGrokWebProvider(_params) {
         input: ["text"],
         cost: GROK_WEB_DEFAULT_COST,
         contextWindow: GROK_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: GROK_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: GROK_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -3126,7 +3151,7 @@ async function buildGrokWebProvider(_params) {
 async function buildZWebProvider(_params) {
   return {
     baseUrl: Z_WEB_BASE_URL,
-    api: "glm-web",
+    api: "openai-completions",
     models: [
       {
         id: "glm-4-plus",
@@ -3135,7 +3160,8 @@ async function buildZWebProvider(_params) {
         input: ["text"],
         cost: Z_WEB_DEFAULT_COST,
         contextWindow: Z_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: Z_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: Z_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "glm-4-think",
@@ -3144,7 +3170,8 @@ async function buildZWebProvider(_params) {
         input: ["text"],
         cost: Z_WEB_DEFAULT_COST,
         contextWindow: Z_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: Z_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: Z_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -3152,7 +3179,7 @@ async function buildZWebProvider(_params) {
 async function buildGlmIntlWebProvider(_params) {
   return {
     baseUrl: GLM_INTL_WEB_BASE_URL,
-    api: "glm-intl-web",
+    api: "openai-completions",
     models: [
       {
         id: "glm-4-plus",
@@ -3161,7 +3188,8 @@ async function buildGlmIntlWebProvider(_params) {
         input: ["text"],
         cost: GLM_INTL_WEB_DEFAULT_COST,
         contextWindow: GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       },
       {
         id: "glm-4-think",
@@ -3170,7 +3198,8 @@ async function buildGlmIntlWebProvider(_params) {
         input: ["text"],
         cost: GLM_INTL_WEB_DEFAULT_COST,
         contextWindow: GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -3178,7 +3207,7 @@ async function buildGlmIntlWebProvider(_params) {
 async function buildPerplexityWebProvider(_params) {
   return {
     baseUrl: PERPLEXITY_WEB_BASE_URL,
-    api: "perplexity-web",
+    api: "openai-completions",
     models: [
       {
         id: "perplexity-web",
@@ -3187,7 +3216,8 @@ async function buildPerplexityWebProvider(_params) {
         input: ["text"],
         cost: PERPLEXITY_WEB_DEFAULT_COST,
         contextWindow: PERPLEXITY_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: 4096
+        maxTokens: 4096,
+        compat: { supportsTools: true }
       },
       {
         id: "perplexity-pro",
@@ -3196,7 +3226,8 @@ async function buildPerplexityWebProvider(_params) {
         input: ["text"],
         cost: PERPLEXITY_WEB_DEFAULT_COST,
         contextWindow: PERPLEXITY_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: 8192
+        maxTokens: 8192,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -3204,7 +3235,7 @@ async function buildPerplexityWebProvider(_params) {
 function buildXiaomiMimoWebProvider(_params) {
   return {
     baseUrl: XIAOMIMO_WEB_BASE_URL,
-    api: "xiaomimo-web",
+    api: "openai-completions",
     models: [
       {
         id: "xiaomimo-chat",
@@ -3213,7 +3244,8 @@ function buildXiaomiMimoWebProvider(_params) {
         input: ["text"],
         cost: XIAOMIMO_WEB_DEFAULT_COST,
         contextWindow: XIAOMIMO_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: XIAOMIMO_WEB_DEFAULT_MAX_TOKENS
+        maxTokens: XIAOMIMO_WEB_DEFAULT_MAX_TOKENS,
+        compat: { supportsTools: true }
       }
     ]
   };
@@ -4766,7 +4798,8 @@ var ChatGPTWebClientBrowser = class {
       await this.ensureChatGptPageReady();
       console.log(`[ChatGPT Web Browser] Connected to existing Chrome successfully`);
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -6723,7 +6756,8 @@ var DoubaoWebClientBrowser = class {
       }
       console.log(`[Doubao Web Browser] Connected to existing Chrome successfully`);
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -6740,6 +6774,7 @@ var DoubaoWebClientBrowser = class {
         headers: getHeadersWithAuth(wsUrl)
       })).contexts()[0];
       this.page = this.browser.pages()[0] || await this.browser.newPage();
+      await this.page.goto("https://www.doubao.com/chat/", { waitUntil: "domcontentloaded" });
     }
     const cookies = this.cookie.split(";").map((c) => {
       const [name, ...valueParts] = c.trim().split("=");
@@ -7385,7 +7420,8 @@ var GeminiWebClientBrowser = class {
         );
       }
     } else {
-      const running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      const running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -8210,7 +8246,8 @@ var GlmIntlWebClientBrowser = class {
         );
       }
     } else {
-      const running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      const running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -8959,7 +8996,8 @@ var ZWebClientBrowser = class {
         );
       }
     } else {
-      const running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      const running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -9735,7 +9773,8 @@ var GrokWebClientBrowser = class {
         );
       }
     } else {
-      const running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      const running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -10611,7 +10650,8 @@ var KimiWebClientBrowser = class {
         await this.page.goto(`${this.baseUrl}/`, { waitUntil: "domcontentloaded" });
       }
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -10626,6 +10666,7 @@ var KimiWebClientBrowser = class {
       }
       this.browser = (await chromium21.connectOverCDP(wsUrl, { headers: getHeadersWithAuth(wsUrl) })).contexts()[0];
       this.page = this.browser.pages()[0] || await this.browser.newPage();
+      await this.page.goto("https://www.kimi.com/", { waitUntil: "domcontentloaded" });
     }
     if (this.cookie.trim()) {
       const pageUrl = this.page?.url() ?? this.baseUrl;
@@ -11265,7 +11306,8 @@ var PerplexityWebClientBrowser = class {
         );
       }
     } else {
-      const running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      const running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
@@ -11726,7 +11768,8 @@ var QwenCNWebClientBrowser = class {
       }
       console.log(`[Qwen CN Web Browser] Connected successfully`);
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -11748,6 +11791,7 @@ var QwenCNWebClientBrowser = class {
       }
       this.browser = ctx2;
       this.page = ctx2.pages()[0] || await ctx2.newPage();
+      await this.page.goto("https://chat2.qianwen.com/", { waitUntil: "domcontentloaded" });
     }
     const browserForCookies = this.browser;
     if (!browserForCookies) {
@@ -12511,7 +12555,8 @@ var QwenWebClientBrowser = class {
       }
       console.log(`[Qwen Web Browser] Connected successfully`);
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${this.running.cdpPort}`;
       let wsUrl = null;
       for (let i = 0; i < 10; i++) {
@@ -12528,6 +12573,7 @@ var QwenWebClientBrowser = class {
         headers: getHeadersWithAuth(wsUrl)
       })).contexts()[0];
       this.page = this.browser.pages()[0] || await this.browser.newPage();
+      await this.page.goto("https://chat.qwen.ai/", { waitUntil: "domcontentloaded" });
     }
     const cookies = this.cookie.split(";").map((c) => {
       const [name, ...valueParts] = c.trim().split("=");
@@ -13233,7 +13279,8 @@ var XiaomiMimoWebClientBrowser = class {
         throw new Error(`Cannot connect to Chrome`);
       }
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(`http://127.0.0.1:${this.running.cdpPort}`, 2e3);
         if (wsUrl) {
@@ -14116,8 +14163,43 @@ var zeroTokenPlugin = {
   description: "Use browser-authenticated web models without standard API keys.",
   configSchema: emptyPluginConfigSchema(),
   register(api) {
+    const webProviderIds = new Set(WEB_PROVIDERS.map((d) => d.id));
+    const webProviderMap = new Map(WEB_PROVIDERS.map((d) => [d.id, d]));
     for (const desc of WEB_PROVIDERS) {
       api.registerProvider(buildRegisteredProvider(api, desc));
+    }
+    const builtinProvider = getApiProvider("openai-completions");
+    console.log(`[zero-token] builtinProvider found: ${!!builtinProvider}`);
+    if (builtinProvider) {
+      const originalStream = builtinProvider.stream;
+      const originalStreamSimple = builtinProvider.streamSimple;
+      const makeInterceptor = (original) => {
+        return async (model, context, options) => {
+          const providerId = typeof model.provider === "string" ? model.provider.trim() : "";
+          console.log(`[zero-token] interceptor called: model.provider="${providerId}", model.api="${model.api}", model.id="${model.id}", isWebProvider=${webProviderIds.has(providerId)}`);
+          if (webProviderIds.has(providerId)) {
+            const desc = webProviderMap.get(providerId);
+            const resolved = await api.runtime.modelAuth.resolveApiKeyForProvider({
+              provider: desc.id,
+              cfg: api.runtime.config
+            });
+            const apiKey = resolved.apiKey?.trim();
+            if (!apiKey) {
+              throw new Error(
+                `No browser-auth credentials found for provider "${desc.id}".`
+              );
+            }
+            return desc.createStreamFn(apiKey)(model, context, options);
+          }
+          return original(model, context, options);
+        };
+      };
+      registerApiProvider({
+        api: "openai-completions",
+        stream: makeInterceptor(originalStream),
+        streamSimple: makeInterceptor(originalStreamSimple)
+      });
+      console.log(`[zero-token] re-registered openai-completions with interceptor`);
     }
   }
 };

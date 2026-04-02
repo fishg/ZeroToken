@@ -64,7 +64,9 @@ export class XiaomiMimoWebClientBrowser {
         throw new Error(`Cannot connect to Chrome`);
       }
     } else {
-      this.running = await launchOpenClawChrome(browserConfig, profile);
+      // Force headless so no browser window pops up during API calls
+      const headlessConfig = { ...browserConfig, headless: true };
+      this.running = await launchOpenClawChrome(headlessConfig, profile);
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(`http://127.0.0.1:${this.running.cdpPort}`, 2000);
         if (wsUrl) {

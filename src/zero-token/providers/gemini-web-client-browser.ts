@@ -61,7 +61,9 @@ export class GeminiWebClientBrowser {
         );
       }
     } else {
-      const running = await launchOpenClawChrome(browserConfig, profile);
+      // Force headless so no browser window pops up during API calls
+      const headlessConfig = { ...browserConfig, headless: true };
+      const running = await launchOpenClawChrome(headlessConfig, profile);
       const cdpUrl = `http://127.0.0.1:${running.cdpPort}`;
       for (let i = 0; i < 10; i++) {
         wsUrl = await getChromeWebSocketUrl(cdpUrl, 2000);
