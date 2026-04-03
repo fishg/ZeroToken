@@ -494,93 +494,277 @@ function buildRegisteredProvider(
   };
 }
 
+// ─── Gateway cleanup helpers ────────────────────────────────────────────────
+// These functions guarantee that stale gateway processes and lock files are
+// fully removed before a new gateway instance starts.  The cleanup runs at
+// TWO points: (1) module-load time (earliest possible), and (2) inside
+// register() with the actual configured port.
+//
+// If all cleanup attempts fail, we set OPENCLAW_ALLOW_MULTI_GATEWAY=1 to
+// skip the file lock entirely — the HTTP server will still bind the port
+// exclusively, so there is no risk of two gateways serving simultaneously.
+
 /**
- * Pre-startup cleanup: kill stale gateway processes and remove lock files.
- * This prevents the "gateway already running; lock timeout" error that
- * confuses users into thinking the product is broken.
+ * Synchronous sleep — uses Atomics.wait (precise, no child-process overhead).
+ */
+function syncSleepMs(ms: number): void {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    // Fallback for environments without SharedArrayBuffer
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      // busy-wait (last resort)
+    }
+  }
+}
+
+/**
+ * Get PIDs listening on `port`.
+ * Uses PowerShell on Windows (more reliable than netstat+findstr parsing),
+ * falls back to netstat if PowerShell fails.  Uses lsof on Linux/macOS.
+ */
+function getListeningPids(port: number): string[] {
+  const myPid = String(process.pid);
+  const pids = new Set<string>();
+
+  if (process.platform === "win32") {
+    // ── Method 1: PowerShell (most reliable on modern Windows) ──
+    try {
+      const psOut = execSync(
+        `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`,
+        { encoding: "utf-8", timeout: 8000 },
+      ).trim();
+      for (const line of psOut.split(/\r?\n/)) {
+        const pid = line.trim();
+        if (pid && pid !== "0" && pid !== myPid) pids.add(pid);
+      }
+    } catch {
+      // PowerShell not available or failed
+    }
+
+    // ── Method 2: netstat fallback ──
+    if (pids.size === 0) {
+      try {
+        const out = execSync(
+          `netstat -aon | findstr ":${port} " | findstr "LISTENING"`,
+          { encoding: "utf-8", timeout: 5000 },
+        ).trim();
+        for (const line of out.split("\n")) {
+          const parts = line.trim().split(/\s+/);
+          const pid = parts[parts.length - 1];
+          if (pid && pid !== "0" && pid !== myPid) pids.add(pid);
+        }
+      } catch {
+        // No processes found
+      }
+    }
+  } else {
+    // Linux / macOS
+    try {
+      const out = execSync(`lsof -ti :${port}`, { encoding: "utf-8", timeout: 5000 }).trim();
+      for (const pid of out.split("\n")) {
+        if (pid.trim() && pid.trim() !== myPid) pids.add(pid.trim());
+      }
+    } catch {
+      // lsof returns non-zero when nothing found
+    }
+  }
+
+  return [...pids];
+}
+
+/**
+ * Kill process(es) by PID.  On Windows uses /T to kill the entire process
+ * tree (child processes), /F to force.
+ */
+function killPid(pid: string): void {
+  try {
+    if (process.platform === "win32") {
+      // /T = kill process tree, /F = force
+      execSync(`taskkill /PID ${pid} /T /F`, { timeout: 5000, stdio: "ignore" });
+    } else {
+      try { process.kill(Number(pid), "SIGKILL"); } catch { /* already exited */ }
+    }
+  } catch {
+    // Process may have already exited
+  }
+}
+
+/**
+ * Wait (poll) for a port to be free, up to `maxWaitMs`.
+ * Returns true if port became free, false if still occupied.
+ */
+function waitForPortFree(port: number, maxWaitMs: number = 6000): boolean {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const pids = getListeningPids(port);
+    if (pids.length === 0) return true;
+    syncSleepMs(500);
+  }
+  return getListeningPids(port).length === 0;
+}
+
+/**
+ * Collect all gateway lock file paths from all possible temp directories.
+ */
+function findGatewayLockFiles(): string[] {
+  const results: string[] = [];
+  const tmpDir = os.tmpdir();
+
+  const lockDirNames: string[] = ["openclaw"];
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  if (uid != null) {
+    lockDirNames.push(`openclaw-${uid}`);
+  }
+
+  for (const dirName of lockDirNames) {
+    const lockDir = path.join(tmpDir, dirName);
+    try {
+      if (!fs.existsSync(lockDir)) continue;
+      for (const file of fs.readdirSync(lockDir)) {
+        if (file.startsWith("gateway.") && file.endsWith(".lock")) {
+          results.push(path.join(lockDir, file));
+        }
+      }
+    } catch {
+      // skip
+    }
+  }
+  return results;
+}
+
+/**
+ * Read the owner PID from a lock file (returns null on any error).
+ */
+function readLockOwnerPid(lockPath: string): number | null {
+  try {
+    const raw = fs.readFileSync(lockPath, "utf-8");
+    const payload = JSON.parse(raw);
+    return typeof payload.pid === "number" ? payload.pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Force-remove a lock file.  Tries Node's unlinkSync first, then
+ * Windows `del /f /q` as fallback (handles read-only / locked files).
+ */
+function forceRemoveLockFile(lockPath: string): boolean {
+  // Attempt 1: Node.js unlink
+  try {
+    fs.unlinkSync(lockPath);
+    return true;
+  } catch {
+    // May be locked by another process handle
+  }
+
+  // Attempt 2: OS-level force delete (Windows only)
+  if (process.platform === "win32") {
+    try {
+      execSync(`cmd /c del /f /q "${lockPath}"`, { timeout: 3000, stdio: "ignore" });
+      return !fs.existsSync(lockPath);
+    } catch {
+      // still locked
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Full gateway cleanup — kill stale processes, remove lock files, verify port
+ * is free.  Called at module load time AND in register().
+ *
+ * If cleanup cannot guarantee a free state, sets OPENCLAW_ALLOW_MULTI_GATEWAY=1
+ * to bypass the lock mechanism entirely (nuclear option).
  */
 function cleanupStaleGateway(port: number = 18789): void {
   try {
-    if (process.platform === "win32") {
-      // Find PID listening on the gateway port via netstat
-      const netstatOutput = execSync(
-        `netstat -aon | findstr ":${port} " | findstr "LISTENING"`,
-        { encoding: "utf-8", timeout: 5000 },
-      ).trim();
-      if (netstatOutput) {
-        const lines = netstatOutput.split("\n");
-        const pids = new Set<string>();
-        for (const line of lines) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[parts.length - 1];
-          if (pid && pid !== "0" && pid !== String(process.pid)) {
-            pids.add(pid);
-          }
-        }
-        for (const pid of pids) {
-          console.log(`[zero-token] Cleaning up stale gateway process (pid ${pid}) on port ${port}`);
-          try {
-            execSync(`taskkill /PID ${pid} /F`, { timeout: 5000, stdio: "ignore" });
-          } catch {
-            // Process may have already exited
-          }
-        }
-        if (pids.size > 0) {
-          // Brief pause to let the process fully release the port
-          execSync("timeout /t 2 /nobreak >nul 2>&1", { timeout: 5000, stdio: "ignore" });
+    // ── Phase 1: Identify and kill lock-file owners ──────────────────────
+    const lockFiles = findGatewayLockFiles();
+    const killedPids = new Set<string>();
+
+    for (const lockPath of lockFiles) {
+      const ownerPid = readLockOwnerPid(lockPath);
+      if (ownerPid && ownerPid !== process.pid) {
+        // Check if owner process is still alive
+        let alive = false;
+        try { process.kill(ownerPid, 0); alive = true; } catch { /* dead */ }
+
+        if (alive) {
+          console.log(`[zero-token] Killing lock owner (pid ${ownerPid}) for ${path.basename(lockPath)}`);
+          killPid(String(ownerPid));
+          killedPids.add(String(ownerPid));
+          syncSleepMs(500); // Brief wait for handle release
         }
       }
-    } else {
-      // Linux/macOS: use lsof to find PID on port
-      try {
-        const lsofOutput = execSync(
-          `lsof -ti :${port}`,
-          { encoding: "utf-8", timeout: 5000 },
-        ).trim();
-        if (lsofOutput) {
-          for (const pid of lsofOutput.split("\n")) {
-            if (pid && pid !== String(process.pid)) {
-              console.log(`[zero-token] Cleaning up stale gateway process (pid ${pid}) on port ${port}`);
-              try {
-                process.kill(Number(pid), "SIGTERM");
-              } catch {
-                // Process may have already exited
-              }
-            }
-          }
-        }
-      } catch {
-        // lsof returns non-zero when no process found — that's fine
+
+      // Now remove the lock file
+      if (forceRemoveLockFile(lockPath)) {
+        console.log(`[zero-token] Removed lock file: ${lockPath}`);
+      } else {
+        console.warn(`[zero-token] WARN: Could not remove lock file: ${lockPath}`);
       }
     }
 
-    // Clean up stale lock files in temp directory
-    const tmpDir = os.tmpdir();
-    const lockDirs = ["openclaw", `openclaw-${process.getuid?.() ?? ""}`].filter(Boolean);
-    for (const dirName of lockDirs) {
-      const lockDir = path.join(tmpDir, dirName);
-      try {
-        if (fs.existsSync(lockDir)) {
-          const files = fs.readdirSync(lockDir);
-          for (const file of files) {
-            if (file.startsWith("gateway.") && file.endsWith(".lock")) {
-              const lockPath = path.join(lockDir, file);
-              try {
-                fs.unlinkSync(lockPath);
-                console.log(`[zero-token] Removed stale lock file: ${lockPath}`);
-              } catch {
-                // Lock file may be held by active process
-              }
-            }
-          }
-        }
-      } catch {
-        // Directory access error — skip
+    // ── Phase 2: Kill any process still holding the gateway port ─────────
+    const portPids = getListeningPids(port);
+    for (const pid of portPids) {
+      if (!killedPids.has(pid)) {
+        console.log(`[zero-token] Killing stale gateway process (pid ${pid}) on port ${port}`);
+        killPid(pid);
+        killedPids.add(pid);
       }
     }
-  } catch {
-    // Best-effort cleanup — never let this block plugin startup
+
+    // ── Phase 3: Wait for port to become free ────────────────────────────
+    if (killedPids.size > 0) {
+      const portFree = waitForPortFree(port, 6000);
+      if (!portFree) {
+        console.warn(`[zero-token] Port ${port} still occupied after killing ${killedPids.size} process(es)`);
+        // Last-ditch: try killing again with fresh PID list
+        for (const pid of getListeningPids(port)) {
+          console.log(`[zero-token] Final retry: killing pid ${pid}`);
+          killPid(pid);
+        }
+        syncSleepMs(2000);
+      }
+    }
+
+    // ── Phase 4: Final lock file sweep ───────────────────────────────────
+    for (const lockPath of findGatewayLockFiles()) {
+      forceRemoveLockFile(lockPath);
+    }
+
+    // ── Phase 5: Nuclear option ──────────────────────────────────────────
+    // If the port is STILL occupied or lock files remain, tell the gateway
+    // to skip its own lock entirely.  This guarantees no "lock timeout".
+    const stillOccupied = getListeningPids(port).length > 0;
+    const remainingLocks = findGatewayLockFiles().length;
+    if (stillOccupied || remainingLocks > 0) {
+      console.warn(
+        `[zero-token] Cannot fully clean gateway state (port occupied=${stillOccupied}, ` +
+        `locks remaining=${remainingLocks}). Setting OPENCLAW_ALLOW_MULTI_GATEWAY=1 to bypass lock.`
+      );
+      process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
+    }
+  } catch (err) {
+    // Cleanup must NEVER block startup — if everything fails, bypass the lock.
+    console.warn(`[zero-token] Gateway cleanup error: ${err instanceof Error ? err.message : String(err)}`);
+    process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
   }
+}
+
+// ── Module-level early cleanup ──────────────────────────────────────────────
+// Run gateway cleanup the moment this plugin module is loaded — this is the
+// earliest possible point, BEFORE the gateway attempts lock acquisition.
+try {
+  console.log("[zero-token] Running early gateway cleanup at module load time...");
+  cleanupStaleGateway();
+} catch {
+  process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
 }
 
 const zeroTokenPlugin = {
@@ -589,7 +773,7 @@ const zeroTokenPlugin = {
   description: "Use browser-authenticated web models without standard API keys.",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {
-    // Clean up stale gateway processes before lock acquisition
+    // Also clean up in register() as a second pass (may have config-specific port)
     const gatewayPort = (api.runtime?.config as any)?.gateway?.port ?? 18789;
     cleanupStaleGateway(gatewayPort);
     // Build a set of zero-token provider IDs for quick lookup

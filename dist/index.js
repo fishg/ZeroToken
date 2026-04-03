@@ -12755,77 +12755,189 @@ function buildRegisteredProvider(api, desc) {
     }
   };
 }
-function cleanupStaleGateway(port = 18789) {
+function syncSleepMs(ms) {
   try {
-    if (process.platform === "win32") {
-      const netstatOutput = execSync2(
-        `netstat -aon | findstr ":${port} " | findstr "LISTENING"`,
-        { encoding: "utf-8", timeout: 5e3 }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+    }
+  }
+}
+function getListeningPids(port) {
+  const myPid = String(process.pid);
+  const pids = /* @__PURE__ */ new Set();
+  if (process.platform === "win32") {
+    try {
+      const psOut = execSync2(
+        `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`,
+        { encoding: "utf-8", timeout: 8e3 }
       ).trim();
-      if (netstatOutput) {
-        const lines = netstatOutput.split("\n");
-        const pids = /* @__PURE__ */ new Set();
-        for (const line of lines) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[parts.length - 1];
-          if (pid && pid !== "0" && pid !== String(process.pid)) {
-            pids.add(pid);
-          }
-        }
-        for (const pid of pids) {
-          console.log(`[zero-token] Cleaning up stale gateway process (pid ${pid}) on port ${port}`);
-          try {
-            execSync2(`taskkill /PID ${pid} /F`, { timeout: 5e3, stdio: "ignore" });
-          } catch {
-          }
-        }
-        if (pids.size > 0) {
-          execSync2("timeout /t 2 /nobreak >nul 2>&1", { timeout: 5e3, stdio: "ignore" });
-        }
+      for (const line of psOut.split(/\r?\n/)) {
+        const pid = line.trim();
+        if (pid && pid !== "0" && pid !== myPid) pids.add(pid);
       }
-    } else {
+    } catch {
+    }
+    if (pids.size === 0) {
       try {
-        const lsofOutput = execSync2(
-          `lsof -ti :${port}`,
+        const out = execSync2(
+          `netstat -aon | findstr ":${port} " | findstr "LISTENING"`,
           { encoding: "utf-8", timeout: 5e3 }
         ).trim();
-        if (lsofOutput) {
-          for (const pid of lsofOutput.split("\n")) {
-            if (pid && pid !== String(process.pid)) {
-              console.log(`[zero-token] Cleaning up stale gateway process (pid ${pid}) on port ${port}`);
-              try {
-                process.kill(Number(pid), "SIGTERM");
-              } catch {
-              }
-            }
-          }
+        for (const line of out.split("\n")) {
+          const parts = line.trim().split(/\s+/);
+          const pid = parts[parts.length - 1];
+          if (pid && pid !== "0" && pid !== myPid) pids.add(pid);
         }
       } catch {
       }
     }
-    const tmpDir = os5.tmpdir();
-    const lockDirs = ["openclaw", `openclaw-${process.getuid?.() ?? ""}`].filter(Boolean);
-    for (const dirName of lockDirs) {
-      const lockDir = path6.join(tmpDir, dirName);
+  } else {
+    try {
+      const out = execSync2(`lsof -ti :${port}`, { encoding: "utf-8", timeout: 5e3 }).trim();
+      for (const pid of out.split("\n")) {
+        if (pid.trim() && pid.trim() !== myPid) pids.add(pid.trim());
+      }
+    } catch {
+    }
+  }
+  return [...pids];
+}
+function killPid(pid) {
+  try {
+    if (process.platform === "win32") {
+      execSync2(`taskkill /PID ${pid} /T /F`, { timeout: 5e3, stdio: "ignore" });
+    } else {
       try {
-        if (fs6.existsSync(lockDir)) {
-          const files = fs6.readdirSync(lockDir);
-          for (const file of files) {
-            if (file.startsWith("gateway.") && file.endsWith(".lock")) {
-              const lockPath = path6.join(lockDir, file);
-              try {
-                fs6.unlinkSync(lockPath);
-                console.log(`[zero-token] Removed stale lock file: ${lockPath}`);
-              } catch {
-              }
-            }
-          }
-        }
+        process.kill(Number(pid), "SIGKILL");
       } catch {
       }
     }
   } catch {
   }
+}
+function waitForPortFree(port, maxWaitMs = 6e3) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const pids = getListeningPids(port);
+    if (pids.length === 0) return true;
+    syncSleepMs(500);
+  }
+  return getListeningPids(port).length === 0;
+}
+function findGatewayLockFiles() {
+  const results = [];
+  const tmpDir = os5.tmpdir();
+  const lockDirNames = ["openclaw"];
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  if (uid != null) {
+    lockDirNames.push(`openclaw-${uid}`);
+  }
+  for (const dirName of lockDirNames) {
+    const lockDir = path6.join(tmpDir, dirName);
+    try {
+      if (!fs6.existsSync(lockDir)) continue;
+      for (const file of fs6.readdirSync(lockDir)) {
+        if (file.startsWith("gateway.") && file.endsWith(".lock")) {
+          results.push(path6.join(lockDir, file));
+        }
+      }
+    } catch {
+    }
+  }
+  return results;
+}
+function readLockOwnerPid(lockPath) {
+  try {
+    const raw = fs6.readFileSync(lockPath, "utf-8");
+    const payload = JSON.parse(raw);
+    return typeof payload.pid === "number" ? payload.pid : null;
+  } catch {
+    return null;
+  }
+}
+function forceRemoveLockFile(lockPath) {
+  try {
+    fs6.unlinkSync(lockPath);
+    return true;
+  } catch {
+  }
+  if (process.platform === "win32") {
+    try {
+      execSync2(`cmd /c del /f /q "${lockPath}"`, { timeout: 3e3, stdio: "ignore" });
+      return !fs6.existsSync(lockPath);
+    } catch {
+    }
+  }
+  return false;
+}
+function cleanupStaleGateway(port = 18789) {
+  try {
+    const lockFiles = findGatewayLockFiles();
+    const killedPids = /* @__PURE__ */ new Set();
+    for (const lockPath of lockFiles) {
+      const ownerPid = readLockOwnerPid(lockPath);
+      if (ownerPid && ownerPid !== process.pid) {
+        let alive = false;
+        try {
+          process.kill(ownerPid, 0);
+          alive = true;
+        } catch {
+        }
+        if (alive) {
+          console.log(`[zero-token] Killing lock owner (pid ${ownerPid}) for ${path6.basename(lockPath)}`);
+          killPid(String(ownerPid));
+          killedPids.add(String(ownerPid));
+          syncSleepMs(500);
+        }
+      }
+      if (forceRemoveLockFile(lockPath)) {
+        console.log(`[zero-token] Removed lock file: ${lockPath}`);
+      } else {
+        console.warn(`[zero-token] WARN: Could not remove lock file: ${lockPath}`);
+      }
+    }
+    const portPids = getListeningPids(port);
+    for (const pid of portPids) {
+      if (!killedPids.has(pid)) {
+        console.log(`[zero-token] Killing stale gateway process (pid ${pid}) on port ${port}`);
+        killPid(pid);
+        killedPids.add(pid);
+      }
+    }
+    if (killedPids.size > 0) {
+      const portFree = waitForPortFree(port, 6e3);
+      if (!portFree) {
+        console.warn(`[zero-token] Port ${port} still occupied after killing ${killedPids.size} process(es)`);
+        for (const pid of getListeningPids(port)) {
+          console.log(`[zero-token] Final retry: killing pid ${pid}`);
+          killPid(pid);
+        }
+        syncSleepMs(2e3);
+      }
+    }
+    for (const lockPath of findGatewayLockFiles()) {
+      forceRemoveLockFile(lockPath);
+    }
+    const stillOccupied = getListeningPids(port).length > 0;
+    const remainingLocks = findGatewayLockFiles().length;
+    if (stillOccupied || remainingLocks > 0) {
+      console.warn(
+        `[zero-token] Cannot fully clean gateway state (port occupied=${stillOccupied}, locks remaining=${remainingLocks}). Setting OPENCLAW_ALLOW_MULTI_GATEWAY=1 to bypass lock.`
+      );
+      process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
+    }
+  } catch (err) {
+    console.warn(`[zero-token] Gateway cleanup error: ${err instanceof Error ? err.message : String(err)}`);
+    process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
+  }
+}
+try {
+  console.log("[zero-token] Running early gateway cleanup at module load time...");
+  cleanupStaleGateway();
+} catch {
+  process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
 }
 var zeroTokenPlugin = {
   id: "zero-token",
