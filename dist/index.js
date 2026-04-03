@@ -3679,13 +3679,21 @@ async function loginKimiWeb(options = {}) {
       { timeout: 3e5 }
       // 5 minutes
     );
-    onProgress("Login detected, capturing cookies...");
+    onProgress("Login detected, capturing credentials...");
     const cookies = await context.cookies();
     const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    const localStorageData = await page.evaluate(() => {
+      const at = localStorage.getItem("access_token");
+      const rt = localStorage.getItem("refresh_token");
+      const kimiAuth = document.cookie.includes("kimi-auth") ? document.cookie.split(";").find((c) => c.trim().startsWith("kimi-auth="))?.split("=")[1] ?? "" : "";
+      return { access_token: at, refresh_token: rt, kimiAuthCookie: kimiAuth };
+    });
     const userAgent = await page.evaluate(() => navigator.userAgent);
     onProgress("Authentication captured successfully!");
     return {
-      cookie: cookieString,
+      cookie: cookieString || `kimi-auth=${localStorageData.kimiAuthCookie}`,
+      accessToken: localStorageData.access_token || void 0,
+      refreshToken: localStorageData.refresh_token || void 0,
       userAgent
     };
   } finally {
@@ -10025,6 +10033,8 @@ import {
 init_shared_browser();
 var KimiWebClientBrowser = class {
   cookie;
+  accessToken;
+  refreshToken;
   userAgent;
   baseUrl = "https://www.kimi.com";
   browser = null;
@@ -10034,14 +10044,20 @@ var KimiWebClientBrowser = class {
     if (typeof options === "string") {
       try {
         const parsed = JSON.parse(options);
-        this.cookie = parsed.cookie;
+        this.cookie = parsed.cookie || "";
+        this.accessToken = parsed.accessToken || "";
+        this.refreshToken = parsed.refreshToken || "";
         this.userAgent = parsed.userAgent || "Mozilla/5.0";
       } catch {
         this.cookie = options;
+        this.accessToken = "";
+        this.refreshToken = "";
         this.userAgent = "Mozilla/5.0";
       }
     } else {
-      this.cookie = options.cookie;
+      this.cookie = options.cookie || "";
+      this.accessToken = options.accessToken || "";
+      this.refreshToken = options.refreshToken || "";
       this.userAgent = options.userAgent || "Mozilla/5.0";
     }
   }
@@ -10092,105 +10108,96 @@ var KimiWebClientBrowser = class {
   async chatCompletions(params) {
     const { browser, page } = await this.ensureBrowser();
     const cookies = await browser.cookies([this.baseUrl]);
-    const kimiAuth = cookies.find((c) => c.name === "kimi-auth")?.value;
-    if (!kimiAuth) {
-      throw new Error("Kimi: \u672A\u627E\u5230 kimi-auth Cookie\uFF0C\u8BF7\u5728 Chrome \u4E2D\u767B\u5F55 www.kimi.com \u540E\u518D\u8BD5");
+    const kimiAuthCookie = cookies.find((c) => c.name === "kimi-auth")?.value;
+    const authToken = this.accessToken || kimiAuthCookie;
+    if (!authToken) {
+      throw new Error(
+        "Kimi: \u672A\u627E\u5230\u8BA4\u8BC1\u51ED\u8BC1\uFF08accessToken \u6216 kimi-auth Cookie\uFF09\u3002\u8BF7\u91CD\u65B0\u767B\u5F55 www.kimi.com\u3002"
+      );
     }
-    const scenario = params.model.includes("search") ? "SCENARIO_SEARCH" : params.model.includes("research") ? "SCENARIO_RESEARCH" : params.model.includes("k1") ? "SCENARIO_K1" : "SCENARIO_K2";
     const result = await page.evaluate(
       async ({
         baseUrl,
         message,
         kimiAuthToken,
-        scenario: scenario2,
-        conversationId
+        scenario
       }) => {
-        const headers = {
-          "Content-Type": "application/json",
-          Accept: "*/*",
-          Origin: baseUrl,
-          Referer: `${baseUrl}/`,
-          "X-Language": "zh-CN",
-          "X-Msh-Platform": "web",
-          Authorization: `Bearer ${kimiAuthToken}`
+        const req = {
+          scenario,
+          message: {
+            role: "user",
+            blocks: [{ message_id: "", text: { content: message } }],
+            scenario
+          },
+          options: { thinking: false }
         };
-        let convId2 = conversationId || "";
-        if (!convId2) {
+        const enc = new TextEncoder().encode(JSON.stringify(req));
+        const buf = new ArrayBuffer(5 + enc.byteLength);
+        const dv = new DataView(buf);
+        dv.setUint8(0, 0);
+        dv.setUint32(1, enc.byteLength, false);
+        new Uint8Array(buf, 5).set(enc);
+        const res = await fetch(`${baseUrl}/apiv2/kimi.gateway.chat.v1.ChatService/Chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/connect+json",
+            "Connect-Protocol-Version": "1",
+            Accept: "*/*",
+            Origin: baseUrl,
+            Referer: `${baseUrl}/`,
+            "X-Language": "zh-CN",
+            "X-Msh-Platform": "web",
+            Authorization: `Bearer ${kimiAuthToken}`
+          },
+          body: buf
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 400)}` };
+        }
+        const arr = await res.arrayBuffer();
+        const u8 = new Uint8Array(arr);
+        const texts = [];
+        let o = 0;
+        while (o + 5 <= u8.length) {
+          const len = new DataView(u8.buffer, u8.byteOffset + o + 1, 4).getUint32(0, false);
+          if (o + 5 + len > u8.length) {
+            break;
+          }
+          const chunk = u8.slice(o + 5, o + 5 + len);
           try {
-            const createRes = await fetch(`${baseUrl}/api/chat`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                name: "New Chat",
-                is_example: false,
-                born_from: "",
-                kimiplus_id: ""
-              })
-            });
-            if (createRes.ok) {
-              const convData = await createRes.json();
-              convId2 = convData.id || "";
+            const obj = JSON.parse(new TextDecoder().decode(chunk));
+            if (obj.error) {
+              return {
+                ok: false,
+                error: obj.error.message || obj.error.code || JSON.stringify(obj.error).slice(0, 200)
+              };
             }
-            if (!convId2) {
-              return { ok: false, error: "Failed to create Kimi conversation" };
+            if (obj.block?.text?.content && ["set", "append"].includes(obj.op || "")) {
+              texts.push(obj.block.text.content);
             }
-          } catch (e) {
-            return { ok: false, error: `Create conversation failed: ${e instanceof Error ? e.message : String(e)}` };
+            if (obj.done) {
+              break;
+            }
+          } catch {
           }
+          o += 5 + len;
         }
-        try {
-          const chatRes = await fetch(`${baseUrl}/api/chat/${convId2}/completion/stream`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              messages: [{ role: "user", content: message }],
-              refs: [],
-              use_search: false,
-              kimiplus_id: ""
-            })
-          });
-          if (!chatRes.ok) {
-            const errText = await chatRes.text();
-            return { ok: false, error: `HTTP ${chatRes.status}: ${errText.slice(0, 400)}` };
-          }
-          const text = await chatRes.text();
-          const lines = text.split("\n");
-          const texts = [];
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6).trim();
-            if (data === "[DONE]") break;
-            try {
-              const obj = JSON.parse(data);
-              if (obj.error) {
-                return { ok: false, error: obj.error.message || JSON.stringify(obj.error).slice(0, 200) };
-              }
-              if (obj.event === "cmpl" && obj.text) {
-                texts.push(obj.text);
-              }
-            } catch {
-            }
-          }
-          return { ok: true, text: texts.join(""), convId: convId2 };
-        } catch (e) {
-          return { ok: false, error: `Chat request failed: ${e instanceof Error ? e.message : String(e)}` };
-        }
+        return { ok: true, text: texts.join("") };
       },
       {
         baseUrl: this.baseUrl,
         message: params.message,
-        kimiAuthToken: kimiAuth,
-        scenario,
-        conversationId: params.conversationId
+        kimiAuthToken: authToken,
+        scenario: params.model.includes("search") ? "SCENARIO_SEARCH" : params.model.includes("research") ? "SCENARIO_RESEARCH" : params.model.includes("k1") ? "SCENARIO_K1" : "SCENARIO_K2"
       }
     );
     if (!result.ok) {
       throw new Error(`Kimi API \u9519\u8BEF: ${result.error}`);
     }
-    console.log(`[Kimi Web] API response: textLen=${result.text.length}, convId=${result.convId}`);
+    console.log(`[Kimi Web] API response: textLen=${result.text.length}`);
     const escaped = JSON.stringify(result.text);
-    const convId = result.convId || "";
-    const sse = `data: {"text":${escaped},"conversation_id":"${convId}"}
+    const sse = `data: {"text":${escaped}}
 
 data: [DONE]
 
@@ -10211,13 +10218,13 @@ data: [DONE]
   async discoverModels() {
     return [
       {
-        id: "moonshot-v1-32k",
-        name: "Moonshot v1 32K",
+        id: "moonshot-v1-128k",
+        name: "Moonshot v1 128K",
         api: "kimi-web",
         reasoning: false,
         input: ["text"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 32e3,
+        contextWindow: 128e3,
         maxTokens: 4096
       }
     ];
@@ -11165,9 +11172,12 @@ var QwenCNWebClientBrowser = class {
             headers: {
               "Content-Type": "application/json",
               Accept: "text/event-stream, text/plain, */*",
+              Referer: `${baseUrl}/`,
+              Origin: baseUrl,
               "x-xsrf-token": xsrfToken,
               "x-deviceid": deviceId,
-              "x-platform": "pc_tongyi"
+              "x-platform": "pc_tongyi",
+              "x-req-from": "pc_web"
             },
             body: JSON.stringify(bodyObj)
           });

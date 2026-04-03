@@ -9,6 +9,8 @@ import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
 
 export interface KimiWebAuthResult {
   cookie: string;
+  accessToken?: string;
+  refreshToken?: string;
   userAgent: string;
 }
 
@@ -85,16 +87,31 @@ export async function loginKimiWeb(options: KimiWebAuthOptions = {}): Promise<Ki
       { timeout: 300000 }, // 5 minutes
     );
 
-    onProgress("Login detected, capturing cookies...");
+    onProgress("Login detected, capturing credentials...");
 
     const cookies = await context.cookies();
     const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    // Also grab access_token from localStorage — some Kimi sessions use this
+    // instead of (or alongside) the kimi-auth cookie
+    const localStorageData = await page.evaluate(() => {
+      const at = localStorage.getItem("access_token");
+      const rt = localStorage.getItem("refresh_token");
+      const kimiAuth = document.cookie.includes("kimi-auth")
+        ? (document.cookie
+            .split(";")
+            .find((c) => c.trim().startsWith("kimi-auth="))
+            ?.split("=")[1] ?? "")
+        : "";
+      return { access_token: at, refresh_token: rt, kimiAuthCookie: kimiAuth };
+    });
     const userAgent = await page.evaluate(() => navigator.userAgent);
 
     onProgress("Authentication captured successfully!");
 
     return {
-      cookie: cookieString,
+      cookie: cookieString || `kimi-auth=${localStorageData.kimiAuthCookie}`,
+      accessToken: localStorageData.access_token || undefined,
+      refreshToken: localStorageData.refresh_token || undefined,
       userAgent,
     };
   } finally {

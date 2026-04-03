@@ -171,9 +171,12 @@ export class QwenCNWebClientBrowser {
             headers: {
               "Content-Type": "application/json",
               Accept: "text/event-stream, text/plain, */*",
+              Referer: `${baseUrl}/`,
+              Origin: baseUrl,
               "x-xsrf-token": xsrfToken,
               "x-deviceid": deviceId,
               "x-platform": "pc_tongyi",
+              "x-req-from": "pc_web",
             },
             body: JSON.stringify(bodyObj),
           });
