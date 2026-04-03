@@ -34,8 +34,8 @@ echo  启动后会自动打开浏览器
 echo  关闭此窗口即可停止服务
 echo.
 
-:: 3秒后打开浏览器
-start "" cmd /c "timeout /t 3 /nobreak >nul && start http://127.0.0.1:18789/"
+:: 立即打开等待页面（页面内部轮询网关，就绪后自动跳转）
+start "" "%~dp0gateway-wait.html"
 
 :: 前台运行 gateway（关窗口即停止）
 call "%OPENCLAW_CMD%" gateway run

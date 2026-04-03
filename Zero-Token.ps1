@@ -222,7 +222,9 @@ function Start-Gateway {
     Write-Host "  关闭此窗口即可停止服务" -ForegroundColor Gray
     Write-Host ""
 
-    Start-Process powershell -ArgumentList "-NoProfile -Command Start-Sleep 8; Start-Process http://127.0.0.1:18789/" -WindowStyle Hidden
+    # 后台轮询等网关可用再打开浏览器（最多60秒）
+    $waitScript = 'for($i=0;$i -lt 60;$i++){try{Invoke-WebRequest -Uri "http://127.0.0.1:18789/" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop | Out-Null; Start-Process "http://127.0.0.1:18789/"; exit}catch{Start-Sleep 1}}'
+    Start-Process powershell -ArgumentList "-NoProfile -Command $waitScript" -WindowStyle Hidden
 
     & $OpenClawCmd gateway run
 

@@ -54,7 +54,7 @@ export class PerplexityWebClientBrowser {
       return;
     }
 
-    const { context, page } = await getSharedBrowser("Perplexity Web Browser", PERPLEXITY_BASE_URL);
+    const { context, page, isNew } = await getSharedBrowser("Perplexity Web Browser", PERPLEXITY_BASE_URL);
     this.context = context;
     this.page = page;
 
@@ -62,9 +62,20 @@ export class PerplexityWebClientBrowser {
     if (cookies.length > 0) {
       try {
         await this.context.addCookies(cookies);
+        // Reload after adding cookies so Perplexity picks up auth state
+        if (isNew) {
+          await this.page.reload({ waitUntil: "domcontentloaded" });
+        }
       } catch (e) {
         console.warn("[Perplexity Web Browser] Failed to add some cookies:", e);
       }
+    }
+
+    // Verify page is actually on perplexity.ai domain
+    const pageUrl = this.page.url();
+    if (!pageUrl.includes("perplexity.ai")) {
+      console.log(`[Perplexity Web Browser] Page not on perplexity.ai (${pageUrl}), navigating...`);
+      await this.page.goto(PERPLEXITY_BASE_URL, { waitUntil: "domcontentloaded" });
     }
 
     this.initialized = true;
@@ -84,6 +95,13 @@ export class PerplexityWebClientBrowser {
     console.log(
       `[Perplexity Web Browser] Sending request... conversationId=${conversationId ?? "(new)"} messageLen=${message.length}`,
     );
+
+    // Ensure page is on perplexity.ai before evaluate (avoid CORS failures)
+    const currentUrl = this.page.url();
+    if (!currentUrl.includes("perplexity.ai")) {
+      console.log(`[Perplexity Web Browser] Page on wrong domain (${currentUrl}), navigating...`);
+      await this.page.goto(PERPLEXITY_BASE_URL, { waitUntil: "domcontentloaded" });
+    }
 
     const evalResult = await this.page.evaluate(
       async ({
@@ -112,21 +130,8 @@ export class PerplexityWebClientBrowser {
           convId = m?.[1] ?? undefined;
         }
 
-        // Build query params
-        const paramsObj: Record<string, string> = {
-          q: message,
-          source: "search",
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          locale: navigator.language || "en-US",
-        };
-        if (convId) {
-          paramsObj["session"] = convId;
-        }
-        const queryString = new URLSearchParams(paramsObj).toString();
-
-        // Call the Perplexity frontend API endpoint
-        // The web app uses SSE for streaming responses
-        const response = await fetch(`https://www.perplexity.ai/search?${queryString}`, {
+        // Call the Perplexity frontend API endpoint (body only, no query string)
+        const response = await fetch("https://www.perplexity.ai/search", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

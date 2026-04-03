@@ -72,16 +72,25 @@ export async function loginZWeb(options: ZWebAuthOptions = {}): Promise<ZWebAuth
     await page.goto("https://chatglm.cn", { waitUntil: "domcontentloaded" });
 
     const userAgent = await page.evaluate(() => navigator.userAgent);
-    onProgress("Please login to ChatGLM (智谱清言) in the opened browser window...");
-    onProgress("Waiting for authentication (chatglm_refresh_token cookie)...");
-
-    // Wait for the chatglm_refresh_token cookie which indicates successful login
-    await page.waitForFunction(
-      () => {
-        return document.cookie.includes("chatglm_refresh_token");
-      },
-      { timeout: 300000 }, // 5 minutes
+    // Check if already logged in (e.g. cookies were copied from user's browser)
+    const alreadyLoggedIn = await page.evaluate(() =>
+      document.cookie.includes("chatglm_refresh_token"),
     );
+
+    if (alreadyLoggedIn) {
+      onProgress("检测到已有登录状态，直接使用...");
+    } else {
+      onProgress("Please login to ChatGLM (智谱清言) in the opened browser window...");
+      onProgress("Waiting for authentication (chatglm_refresh_token cookie)...");
+
+      // Wait for the chatglm_refresh_token cookie which indicates successful login
+      await page.waitForFunction(
+        () => {
+          return document.cookie.includes("chatglm_refresh_token");
+        },
+        { timeout: 300000 }, // 5 minutes
+      );
+    }
 
     onProgress("Login detected, capturing cookies...");
     const cookies = await context.cookies("https://chatglm.cn");

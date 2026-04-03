@@ -2581,6 +2581,91 @@ function resolveBrowserExecutable(resolved) {
 function resolveOpenClawUserDataDir(profileName = DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME) {
   return path4.join(resolveStateDir(), "browser", profileName, "user-data");
 }
+function detectUserBrowserDataDir(exePath) {
+  if (process.platform !== "win32") return null;
+  const localAppData = process.env.LOCALAPPDATA;
+  if (!localAppData) return null;
+  const exeLower = exePath.toLowerCase();
+  if (exeLower.includes("msedge")) {
+    return path4.join(localAppData, "Microsoft", "Edge", "User Data");
+  }
+  if (exeLower.includes("chrome")) {
+    return path4.join(localAppData, "Google", "Chrome", "User Data");
+  }
+  if (exeLower.includes("brave")) {
+    return path4.join(localAppData, "BraveSoftware", "Brave-Browser", "User Data");
+  }
+  return null;
+}
+function copyUserPasswords(exePath, targetUserDataDir) {
+  try {
+    const sourceDir = detectUserBrowserDataDir(exePath);
+    if (!sourceDir || !exists2(sourceDir)) return;
+    const sourceDefault = path4.join(sourceDir, "Default");
+    const targetDefault = path4.join(targetUserDataDir, "Default");
+    fs5.mkdirSync(targetDefault, { recursive: true });
+    const filesToCopy = [
+      "Cookies",
+      // ALL logged-in sessions (Google account etc.)
+      "Login Data",
+      // Saved passwords (SQLite)
+      "Login Data For Account",
+      // Account-specific passwords
+      "Web Data"
+      // Autofill data (addresses, cards)
+    ];
+    for (const fileName of filesToCopy) {
+      const src = path4.join(sourceDefault, fileName);
+      const dst = path4.join(targetDefault, fileName);
+      if (!exists2(src)) continue;
+      if (exists2(dst)) {
+        try {
+          const srcStat = fs5.statSync(src);
+          const dstStat = fs5.statSync(dst);
+          if (srcStat.mtimeMs <= dstStat.mtimeMs) continue;
+        } catch {
+        }
+      }
+      try {
+        const data = fs5.readFileSync(src);
+        fs5.writeFileSync(dst, data);
+        console.log(`[zero-token] Copied ${fileName} from user browser`);
+      } catch {
+        try {
+          execSync(
+            `powershell -NoProfile -Command "[System.IO.File]::Copy('${src.replace(/'/g, "''")}', '${dst.replace(/'/g, "''")}', $true)"`,
+            { stdio: "ignore", timeout: 8e3 }
+          );
+          console.log(`[zero-token] Copied ${fileName} via PowerShell`);
+        } catch {
+          console.log(`[zero-token] Could not copy ${fileName} (non-fatal)`);
+        }
+      }
+    }
+    const sourceLocalState = path4.join(sourceDir, "Local State");
+    const targetLocalState = path4.join(targetUserDataDir, "Local State");
+    if (exists2(sourceLocalState)) {
+      try {
+        const sourceRaw = fs5.readFileSync(sourceLocalState, "utf-8");
+        const sourceState = JSON.parse(sourceRaw);
+        let targetState = {};
+        if (exists2(targetLocalState)) {
+          try {
+            targetState = JSON.parse(fs5.readFileSync(targetLocalState, "utf-8"));
+          } catch {
+          }
+        }
+        if (sourceState.os_crypt) {
+          targetState.os_crypt = sourceState.os_crypt;
+          fs5.writeFileSync(targetLocalState, JSON.stringify(targetState, null, 2));
+          console.log("[zero-token] Synced encryption key for passwords");
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+}
 function cdpUrlForPort(cdpPort) {
   return `http://127.0.0.1:${cdpPort}`;
 }
@@ -2668,13 +2753,11 @@ async function launchOpenClawChrome(resolved, profile) {
       `--user-data-dir=${userDataDir}`,
       "--no-first-run",
       "--no-default-browser-check",
-      "--disable-sync",
       "--disable-background-networking",
       "--disable-component-update",
       "--disable-features=Translate,MediaRouter",
       "--disable-session-crashed-bubble",
-      "--hide-crash-restore-bubble",
-      "--password-store=basic"
+      "--hide-crash-restore-bubble"
     ];
     if (resolved.headless) {
       args.push("--headless=new", "--disable-gpu");
@@ -2738,6 +2821,7 @@ async function launchOpenClawChrome(resolved, profile) {
   } catch (error) {
     console.warn(`openclaw browser clean-exit prefs failed: ${String(error)}`);
   }
+  copyUserPasswords(exe.path, userDataDir);
   const proc = spawnOnce();
   const readyDeadline = Date.now() + 15e3;
   while (Date.now() < readyDeadline) {
@@ -4031,15 +4115,22 @@ async function loginZWeb(options = {}) {
     onProgress("Navigating to ChatGLM...");
     await page.goto("https://chatglm.cn", { waitUntil: "domcontentloaded" });
     const userAgent = await page.evaluate(() => navigator.userAgent);
-    onProgress("Please login to ChatGLM (\u667A\u8C31\u6E05\u8A00) in the opened browser window...");
-    onProgress("Waiting for authentication (chatglm_refresh_token cookie)...");
-    await page.waitForFunction(
-      () => {
-        return document.cookie.includes("chatglm_refresh_token");
-      },
-      { timeout: 3e5 }
-      // 5 minutes
+    const alreadyLoggedIn = await page.evaluate(
+      () => document.cookie.includes("chatglm_refresh_token")
     );
+    if (alreadyLoggedIn) {
+      onProgress("\u68C0\u6D4B\u5230\u5DF2\u6709\u767B\u5F55\u72B6\u6001\uFF0C\u76F4\u63A5\u4F7F\u7528...");
+    } else {
+      onProgress("Please login to ChatGLM (\u667A\u8C31\u6E05\u8A00) in the opened browser window...");
+      onProgress("Waiting for authentication (chatglm_refresh_token cookie)...");
+      await page.waitForFunction(
+        () => {
+          return document.cookie.includes("chatglm_refresh_token");
+        },
+        { timeout: 3e5 }
+        // 5 minutes
+      );
+    }
     onProgress("Login detected, capturing cookies...");
     const cookies = await context.cookies("https://chatglm.cn");
     const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
@@ -8848,7 +8939,8 @@ function createZWebStreamFn(cookieOrJson) {
     const run = async () => {
       try {
         await client.init();
-        const sessionKey = context.sessionId || "default";
+        const baseKey = context.sessionId || "default";
+        const sessionKey = `${baseKey}:${model.id}`;
         let sessionId = sessionMap5.get(sessionKey);
         const messages = context.messages || [];
         const systemPrompt = context.systemPrompt || "";
@@ -9165,6 +9257,7 @@ Please proceed based on this tool result.`;
           };
           checkTags();
         };
+        let emittedLength = 0;
         const processLine = (line) => {
           if (!line || !line.startsWith("data:")) {
             return;
@@ -9178,7 +9271,7 @@ Please proceed based on this tool result.`;
             if (data.conversation_id) {
               sessionMap5.set(sessionKey, data.conversation_id);
             }
-            let delta = "";
+            let fullText = "";
             if (data.parts && Array.isArray(data.parts)) {
               for (const part of data.parts) {
                 if (part && typeof part === "object") {
@@ -9189,22 +9282,22 @@ Please proceed based on this tool result.`;
                       if (c && typeof c === "object") {
                         const cc = c;
                         if (cc.type === "text" && typeof cc.text === "string") {
-                          delta = cc.text;
+                          fullText = cc.text;
                           break;
                         }
                       }
                     }
                   }
-                  if (delta) {
-                    break;
-                  }
+                  if (fullText) break;
                 }
               }
             }
-            if (!delta) {
-              delta = data.text || data.content || data.delta || "";
+            if (!fullText) {
+              fullText = data.text || data.content || data.delta || "";
             }
-            if (typeof delta === "string" && delta) {
+            if (typeof fullText === "string" && fullText.length > emittedLength) {
+              const delta = fullText.slice(emittedLength);
+              emittedLength = fullText.length;
               pushDelta(delta);
             }
           } catch {
@@ -10766,16 +10859,24 @@ var PerplexityWebClientBrowser = class {
     if (this.initialized) {
       return;
     }
-    const { context, page } = await getSharedBrowser("Perplexity Web Browser", PERPLEXITY_BASE_URL);
+    const { context, page, isNew } = await getSharedBrowser("Perplexity Web Browser", PERPLEXITY_BASE_URL);
     this.context = context;
     this.page = page;
     const cookies = this.parseCookies();
     if (cookies.length > 0) {
       try {
         await this.context.addCookies(cookies);
+        if (isNew) {
+          await this.page.reload({ waitUntil: "domcontentloaded" });
+        }
       } catch (e) {
         console.warn("[Perplexity Web Browser] Failed to add some cookies:", e);
       }
+    }
+    const pageUrl = this.page.url();
+    if (!pageUrl.includes("perplexity.ai")) {
+      console.log(`[Perplexity Web Browser] Page not on perplexity.ai (${pageUrl}), navigating...`);
+      await this.page.goto(PERPLEXITY_BASE_URL, { waitUntil: "domcontentloaded" });
     }
     this.initialized = true;
   }
@@ -10787,6 +10888,11 @@ var PerplexityWebClientBrowser = class {
     console.log(
       `[Perplexity Web Browser] Sending request... conversationId=${conversationId ?? "(new)"} messageLen=${message.length}`
     );
+    const currentUrl = this.page.url();
+    if (!currentUrl.includes("perplexity.ai")) {
+      console.log(`[Perplexity Web Browser] Page on wrong domain (${currentUrl}), navigating...`);
+      await this.page.goto(PERPLEXITY_BASE_URL, { waitUntil: "domcontentloaded" });
+    }
     const evalResult = await this.page.evaluate(
       async ({
         conversationId: conversationId2,
@@ -10807,17 +10913,7 @@ var PerplexityWebClientBrowser = class {
           const m = window.location.pathname.match(/\/c\/([a-zA-Z0-9_-]+)/);
           convId = m?.[1] ?? void 0;
         }
-        const paramsObj = {
-          q: message2,
-          source: "search",
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          locale: navigator.language || "en-US"
-        };
-        if (convId) {
-          paramsObj["session"] = convId;
-        }
-        const queryString = new URLSearchParams(paramsObj).toString();
-        const response = await fetch(`https://www.perplexity.ai/search?${queryString}`, {
+        const response = await fetch("https://www.perplexity.ai/search", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

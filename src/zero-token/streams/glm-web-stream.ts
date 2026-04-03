@@ -35,7 +35,10 @@ export function createZWebStreamFn(cookieOrJson: string): StreamFn {
       try {
         await client.init();
 
-        const sessionKey = (context as unknown as { sessionId?: string }).sessionId || "default";
+        // Include model ID in session key — different GLM models use different
+        // assistants, so conversation IDs can't be shared across models.
+        const baseKey = (context as unknown as { sessionId?: string }).sessionId || "default";
+        const sessionKey = `${baseKey}:${model.id}`;
         let sessionId = sessionMap.get(sessionKey);
 
         const messages = context.messages || [];
@@ -399,6 +402,13 @@ export function createZWebStreamFn(cookieOrJson: string): StreamFn {
           checkTags();
         };
 
+        // ChatGLM returns CUMULATIVE text (full response so far), not deltas.
+        // Track how many characters we've already emitted — only send new chars.
+        // Using length-based tracking instead of startsWith because ChatGLM
+        // may reformat markdown mid-stream (e.g. adding ** around text),
+        // which breaks prefix comparison.
+        let emittedLength = 0;
+
         const processLine = (line: string) => {
           if (!line || !line.startsWith("data:")) {
             return;
@@ -412,16 +422,15 @@ export function createZWebStreamFn(cookieOrJson: string): StreamFn {
           try {
             const data = JSON.parse(dataStr);
 
-            // Extract conversation ID - ChatGLM uses conversation_id
+            // Extract conversation ID
             if (data.conversation_id) {
               sessionMap.set(sessionKey, data.conversation_id);
             }
 
-            // Extract content delta - ChatGLM format
-            // ChatGLM returns parts[].content[] with text
-            let delta = "";
+            // Extract cumulative text from ChatGLM response
+            let fullText = "";
 
-            // Try parts[].content[] format (new ChatGLM format)
+            // Try parts[].content[] format (ChatGLM format)
             if (data.parts && Array.isArray(data.parts)) {
               for (const part of data.parts) {
                 if (part && typeof part === "object") {
@@ -432,25 +441,26 @@ export function createZWebStreamFn(cookieOrJson: string): StreamFn {
                       if (c && typeof c === "object") {
                         const cc = c as Record<string, unknown>;
                         if (cc.type === "text" && typeof cc.text === "string") {
-                          delta = cc.text;
+                          fullText = cc.text;
                           break;
                         }
                       }
                     }
                   }
-                  if (delta) {
-                    break;
-                  }
+                  if (fullText) break;
                 }
               }
             }
 
             // Fallback to legacy format
-            if (!delta) {
-              delta = data.text || data.content || data.delta || "";
+            if (!fullText) {
+              fullText = data.text || data.content || data.delta || "";
             }
 
-            if (typeof delta === "string" && delta) {
+            if (typeof fullText === "string" && fullText.length > emittedLength) {
+              // Only emit the NEW characters (from emittedLength onward)
+              const delta = fullText.slice(emittedLength);
+              emittedLength = fullText.length;
               pushDelta(delta);
             }
           } catch {
