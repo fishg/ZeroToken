@@ -32,6 +32,14 @@
     "extensions": [
       "./dist/index.js"
     ],
+    "compat": {
+      "pluginApi": ">=0.57.1",
+      "minGatewayVersion": "0.57.1"
+    },
+    "build": {
+      "openclawVersion": "0.57.1",
+      "pluginSdkVersion": "0.57.1"
+    },
     "install": {
       "localPath": ".",
       "defaultChoice": "local"
