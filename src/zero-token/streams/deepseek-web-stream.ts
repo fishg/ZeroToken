@@ -190,10 +190,6 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
         console.log(
           `[DeepseekWebStream] Starting run for session: ${sessionKey}. DS session: ${dsSessionId}. Parent: ${parentId}. Prompt length: ${prompt.length}. isContinuing: ${!!parentId}`,
         );
-        console.log(`[DeepseekWebStream] Full Prompt Preview: ${prompt.slice(0, 500)}...`);
-        if (parentId) {
-          console.log(`[DeepseekWebStream] CONTINUING TURN - Full prompt:\n${prompt}`);
-        }
 
         if (!prompt) {
           console.error(`[DeepseekWebStream] No prompt to send:`, JSON.stringify(messages));

@@ -319,6 +319,9 @@ export class DeepSeekWebClient {
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`[DeepSeekWebClient] Chat completion request failed: ${res.status}`, errorText);
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(`DeepSeek 登录已过期（HTTP ${res.status}），请重新登录 chat.deepseek.com`);
+      }
       throw new Error(`Chat completion failed: ${res.status} ${errorText}`);
     }
 

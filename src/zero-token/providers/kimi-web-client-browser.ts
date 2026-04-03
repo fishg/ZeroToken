@@ -174,6 +174,9 @@ export class KimiWebClientBrowser {
 
         if (!res.ok) {
           const text = await res.text();
+          if (res.status === 401 || res.status === 403) {
+            return { ok: false as const, error: `登录已过期（HTTP ${res.status}），请重新登录 www.kimi.com` };
+          }
           return { ok: false as const, error: `HTTP ${res.status}: ${text.slice(0, 400)}` };
         }
         const arr = await res.arrayBuffer();

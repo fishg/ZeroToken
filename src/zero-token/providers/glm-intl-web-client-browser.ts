@@ -203,6 +203,9 @@ export class GlmIntlWebClientBrowser {
           });
 
           if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+              return { ok: false, status: res.status, error: `登录已过期（HTTP ${res.status}），请重新登录 chat.z.ai` };
+            }
             return { ok: false, status: res.status, error: await res.text() };
           }
 

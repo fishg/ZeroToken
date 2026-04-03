@@ -183,6 +183,9 @@ export class QwenCNWebClientBrowser {
 
           if (!res.ok) {
             const errorText = await res.text();
+            if (res.status === 401 || res.status === 403) {
+              return { ok: false, status: res.status, error: `登录已过期（HTTP ${res.status}），请重新登录 chat2.qianwen.com` };
+            }
             return { ok: false, status: res.status, error: errorText };
           }
 

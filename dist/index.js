@@ -5564,6 +5564,9 @@ var DeepSeekWebClient = class {
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`[DeepSeekWebClient] Chat completion request failed: ${res.status}`, errorText);
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(`DeepSeek \u767B\u5F55\u5DF2\u8FC7\u671F\uFF08HTTP ${res.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55 chat.deepseek.com`);
+      }
       throw new Error(`Chat completion failed: ${res.status} ${errorText}`);
     }
     console.log(
@@ -5825,11 +5828,6 @@ No self-talk. Reply in user's language. \u5982\u679C\u7528\u6237\u8BF4\u4E2D\u65
         console.log(
           `[DeepseekWebStream] Starting run for session: ${sessionKey}. DS session: ${dsSessionId}. Parent: ${parentId}. Prompt length: ${prompt.length}. isContinuing: ${!!parentId}`
         );
-        console.log(`[DeepseekWebStream] Full Prompt Preview: ${prompt.slice(0, 500)}...`);
-        if (parentId) {
-          console.log(`[DeepseekWebStream] CONTINUING TURN - Full prompt:
-${prompt}`);
-        }
         if (!prompt) {
           console.error(`[DeepseekWebStream] No prompt to send:`, JSON.stringify(messages));
           throw new Error("No message found to send to DeepSeek web API");
@@ -7889,6 +7887,9 @@ var GlmIntlWebClientBrowser = class {
             body: JSON.stringify({})
           });
           if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+              return { ok: false, status: res.status, error: `\u767B\u5F55\u5DF2\u8FC7\u671F\uFF08HTTP ${res.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55 chat.z.ai` };
+            }
             return { ok: false, status: res.status, error: await res.text() };
           }
           const data = await res.json();
@@ -10153,6 +10154,9 @@ var KimiWebClientBrowser = class {
         });
         if (!res.ok) {
           const text = await res.text();
+          if (res.status === 401 || res.status === 403) {
+            return { ok: false, error: `\u767B\u5F55\u5DF2\u8FC7\u671F\uFF08HTTP ${res.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55 www.kimi.com` };
+          }
           return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 400)}` };
         }
         const arr = await res.arrayBuffer();
@@ -10254,7 +10258,7 @@ function createKimiWebStreamFn(cookieOrJson) {
         const tools = context.tools || [];
         let toolPrompt = "";
         if (tools.length > 0) {
-          toolPrompt = '\n\n[CRITICAL TOOL CALLING INSTRUCTION]\nYou have tools available. To call ANY tool, you MUST output this EXACT XML format:\n<tool_call id="unique_id" name="tool_name">{"param1": "value1", "param2": "value2"}</tool_call>\n\nExamples:\n<tool_call id="call_1" name="read">{"file_path": "D:\\\\Users\\\\111\\\\Desktop\\\\\u6587\u4EF6\u5939\\\\111.txt"}</tool_call>\n<tool_call id="call_2" name="write">{"file_path": "D:\\\\Users\\\\111\\\\Desktop\\\\\u6587\u4EF6\u5939\\\\111.txt", "content": "Hello World"}</tool_call>\n<tool_call id="call_3" name="exec">{"command": "echo hello"}</tool_call>\n<tool_call id="call_4" name="exec">{"command": "python D:\\\\Users\\\\111\\\\Desktop\\\\hello.py"}</tool_call>\n\nRULES:\n1. Only use tools when the user EXPLICITLY requests file/system operations (create file, read file, run command, edit file, etc.). For questions, code writing, explanations, etc., reply directly in text WITHOUT calling any tool.\n2. ABSOLUTELY NO self-talk, reasoning, or planning. NEVER output "The user wants...", "Let me try...", etc.\n3. When calling a tool, output ONLY the <tool_call> XML tag. NOTHING else.\n4. After receiving a tool result, respond with a brief confirmation ONLY.\n5. For creating files with content, use the write tool. For creating empty files on Windows, use exec with New-Item.\n6. ALWAYS reply in the SAME language the user used. \u5982\u679C\u7528\u6237\u8BF4\u4E2D\u6587\uFF0C\u4F60\u5FC5\u987B\u5168\u7A0B\u7528\u4E2D\u6587\u56DE\u590D\u3002\n7. If a tool call fails, try a different approach silently.\n8. When user asks to run/execute a file or program, use the exec tool (e.g. exec with "python file.py", "node file.js", "code file.py"). NEVER tell the user to run it manually.';
+          toolPrompt = '\n\n[CRITICAL TOOL CALLING INSTRUCTION]\nYou have tools available. To call ANY tool, you MUST output this EXACT XML format:\n<tool_call id="unique_id" name="tool_name">{"param1": "value1", "param2": "value2"}</tool_call>\n\nExamples:\n<tool_call id="call_1" name="read">{"file_path": "/path/to/file.txt"}</tool_call>\n<tool_call id="call_2" name="write">{"file_path": "/path/to/file.txt", "content": "Hello World"}</tool_call>\n<tool_call id="call_3" name="exec">{"command": "echo hello"}</tool_call>\n<tool_call id="call_4" name="exec">{"command": "python hello.py"}</tool_call>\n\nRULES:\n1. Only use tools when the user EXPLICITLY requests file/system operations (create file, read file, run command, edit file, etc.). For questions, code writing, explanations, etc., reply directly in text WITHOUT calling any tool.\n2. ABSOLUTELY NO self-talk, reasoning, or planning. NEVER output "The user wants...", "Let me try...", etc.\n3. When calling a tool, output ONLY the <tool_call> XML tag. NOTHING else.\n4. After receiving a tool result, respond with a brief confirmation ONLY.\n5. For creating files with content, use the write tool. For creating empty files on Windows, use exec with New-Item.\n6. ALWAYS reply in the SAME language the user used. \u5982\u679C\u7528\u6237\u8BF4\u4E2D\u6587\uFF0C\u4F60\u5FC5\u987B\u5168\u7A0B\u7528\u4E2D\u6587\u56DE\u590D\u3002\n7. If a tool call fails, try a different approach silently.\n8. When user asks to run/execute a file or program, use the exec tool (e.g. exec with "python file.py", "node file.js", "code file.py"). NEVER tell the user to run it manually.';
         }
         let prompt = "";
         if (!sessionId) {
@@ -10771,6 +10775,11 @@ var PerplexityWebClientBrowser = class {
         });
         if (!response.ok) {
           const errText = await response.text();
+          if (response.status === 401 || response.status === 403) {
+            throw new Error(
+              `Perplexity \u767B\u5F55\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55 www.perplexity.ai`
+            );
+          }
           throw new Error(
             `Perplexity API error: ${response.status} ${response.statusText} - ${errText.slice(0, 300)}`
           );
@@ -11183,6 +11192,9 @@ var QwenCNWebClientBrowser = class {
           });
           if (!res.ok) {
             const errorText = await res.text();
+            if (res.status === 401 || res.status === 403) {
+              return { ok: false, status: res.status, error: `\u767B\u5F55\u5DF2\u8FC7\u671F\uFF08HTTP ${res.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55 chat2.qianwen.com` };
+            }
             return { ok: false, status: res.status, error: errorText };
           }
           const reader = res.body?.getReader();

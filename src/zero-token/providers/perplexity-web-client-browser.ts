@@ -145,6 +145,11 @@ export class PerplexityWebClientBrowser {
 
         if (!response.ok) {
           const errText = await response.text();
+          if (response.status === 401 || response.status === 403) {
+            throw new Error(
+              `Perplexity 登录已过期（HTTP ${response.status}），请重新登录 www.perplexity.ai`,
+            );
+          }
           throw new Error(
             `Perplexity API error: ${response.status} ${response.statusText} - ${errText.slice(0, 300)}`,
           );

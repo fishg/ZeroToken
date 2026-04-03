@@ -14,8 +14,7 @@ $Providers = @(
     @{ Num= 9; Id="gemini-web";     Label="Gemini";             Site="gemini.google.com" }
     @{ Num=10; Id="grok-web";       Label="Grok";               Site="grok.com" }
     @{ Num=11; Id="perplexity-web"; Label="Perplexity";         Site="www.perplexity.ai" }
-    @{ Num=12; Id="xiaomimo-web";   Label="XiaoMi MiMo";        Site="aistudio.xiaomimimo.com" }
-    @{ Num=13; Id="glm-intl-web";   Label="GLM International";  Site="chat.z.ai" }
+    @{ Num=12; Id="glm-intl-web";   Label="GLM International";  Site="chat.z.ai" }
 )
 
 $OpenClawCmd = $null
