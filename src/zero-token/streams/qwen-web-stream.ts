@@ -11,6 +11,7 @@ import {
   QwenWebClientBrowser,
   type QwenWebClientOptions,
 } from "../providers/qwen-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
 
 const conversationMap = new Map<string, string>();
 
@@ -157,12 +158,12 @@ export function createQwenWebStreamFn(cookieOrJson: string): StreamFn {
         console.log(`[QwenWebStream] Tools available: ${tools.length}`);
         console.log(`[QwenWebStream] Prompt length: ${prompt.length}`);
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           conversationId,
           message: prompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "Qwen" });
 
         if (!responseStream) {
           throw new Error("Qwen API returned empty response body");
@@ -234,7 +235,7 @@ export function createQwenWebStreamFn(cookieOrJson: string): StreamFn {
                 partial: createPartial(),
               });
             } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,

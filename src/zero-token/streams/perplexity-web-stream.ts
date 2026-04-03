@@ -10,6 +10,7 @@ import {
   PerplexityWebClientBrowser,
   type PerplexityWebClientOptions,
 } from "../providers/perplexity-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
 
 // Helper to strip messages for web providers
 function stripForWebProvider(prompt: string): string {
@@ -76,11 +77,11 @@ export function createPerplexityWebStreamFn(cookieOrJson: string): StreamFn {
 
         console.log(`[PerplexityWebStream] Starting run`);
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           message: prompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "Perplexity" });
 
         if (!responseStream) {
           throw new Error("Perplexity API returned empty response body");

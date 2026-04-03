@@ -11,8 +11,10 @@ import {
   GlmIntlWebClientBrowser,
   type GlmIntlWebClientOptions,
 } from "../providers/glm-intl-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
+import { LruMap } from "../utils/lru-map.js";
 
-const sessionMap = new Map<string, string>();
+const sessionMap = new LruMap<string, string>();
 
 export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
   let options: GlmIntlWebClientOptions;
@@ -140,12 +142,12 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
         console.log(`[GlmIntlWebStream] Tools available: ${tools.length}`);
         console.log(`[GlmIntlWebStream] Prompt length: ${prompt.length}`);
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           conversationId,
           message: prompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "GLM-Intl" });
 
         if (!responseStream) {
           throw new Error("GLM International API returned empty response body");
@@ -217,7 +219,7 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
                 partial: createPartial(),
               });
             } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,

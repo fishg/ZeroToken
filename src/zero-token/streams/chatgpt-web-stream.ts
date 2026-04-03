@@ -10,6 +10,7 @@ import {
   ChatGPTWebClientBrowser,
   type ChatGPTWebClientOptions,
 } from "../providers/chatgpt-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
 
 // Helper to strip messages for web providers
 function stripForWebProvider(prompt: string): string {
@@ -165,13 +166,13 @@ export function createChatGPTWebStreamFn(cookieOrJson: string): StreamFn {
           `[ChatGPTWebStream] Tools: ${tools.length}, prompt length: ${cleanPrompt.length}`,
         );
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           conversationId: conversationId || "new",
           parentMessageId,
           message: cleanPrompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "ChatGPT" });
 
         if (!responseStream) {
           throw new Error("ChatGPT API returned empty response body");
@@ -228,7 +229,7 @@ export function createChatGPTWebStreamFn(cookieOrJson: string): StreamFn {
               contentParts[index] = { type: "text", text: "" };
               stream.push({ type: "text_start", contentIndex: index, partial: createPartial() });
             } else {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,

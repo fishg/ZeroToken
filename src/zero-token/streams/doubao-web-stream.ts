@@ -11,8 +11,10 @@ import {
   DoubaoWebClientBrowser,
   type DoubaoWebClientOptions,
 } from "../providers/doubao-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
+import { LruMap } from "../utils/lru-map.js";
 
-const sessionMap = new Map<string, string>();
+const sessionMap = new LruMap<string, string>();
 
 export function createDoubaoWebStreamFn(cookieOrJson: string): StreamFn {
   let options: DoubaoWebClientOptions;
@@ -113,11 +115,11 @@ export function createDoubaoWebStreamFn(cookieOrJson: string): StreamFn {
         console.log(`[DoubaoWebStream] Tools available: ${tools.length}`);
         console.log(`[DoubaoWebStream] Prompt length: ${prompt.length}`);
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           messages: [{ role: "user", content: prompt }],
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "Doubao" });
 
         if (!responseStream) {
           throw new Error("DoubaoWeb API returned empty response body");
@@ -189,7 +191,7 @@ export function createDoubaoWebStreamFn(cookieOrJson: string): StreamFn {
                 partial: createPartial(),
               });
             } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,

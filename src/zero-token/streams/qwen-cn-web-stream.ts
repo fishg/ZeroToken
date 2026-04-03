@@ -11,8 +11,10 @@ import {
   QwenCNWebClientBrowser,
   type QwenCNWebClientOptions,
 } from "../providers/qwen-cn-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
+import { LruMap } from "../utils/lru-map.js";
 
-const sessionMap = new Map<string, string>();
+const sessionMap = new LruMap<string, string>();
 
 export function createQwenCNWebStreamFn(cookieOrJson: string): StreamFn {
   let options: QwenCNWebClientOptions;
@@ -140,12 +142,12 @@ export function createQwenCNWebStreamFn(cookieOrJson: string): StreamFn {
         console.log(`[QwenCNWebStream] Tools available: ${tools.length}`);
         console.log(`[QwenCNWebStream] Prompt length: ${prompt.length}`);
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           sessionId,
           message: prompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "QwenCN" });
 
         if (!responseStream) {
           throw new Error("Qwen API returned empty response body");
@@ -217,7 +219,7 @@ export function createQwenCNWebStreamFn(cookieOrJson: string): StreamFn {
                 partial: createPartial(),
               });
             } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,
@@ -459,8 +461,8 @@ export function createQwenCNWebStreamFn(cookieOrJson: string): StreamFn {
             }
 
             // Extract conversation ID
-            if (data.sessionId || data.sessionId) {
-              sessionMap.set(sessionKey, data.sessionId || data.sessionId);
+            if (data.sessionId || data.msgId) {
+              sessionMap.set(sessionKey, data.sessionId || data.msgId);
             }
 
             // Extract content delta - Qwen v2 uses choices[0].delta.content

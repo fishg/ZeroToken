@@ -142,12 +142,24 @@ function Do-Install {
         Write-Host "      https://nodejs.org/" -ForegroundColor Gray
         return $false
     }
+    # 检查 Node.js 版本
+    $nodeVer = (node -v) -replace '^v','' -split '\.' | Select-Object -First 1
+    if ([int]$nodeVer -lt 22) {
+        Write-Host "  [x] Node.js 版本过低（需要 22+，当前 v$nodeVer）" -ForegroundColor Red
+        Write-Host "      请升级: https://nodejs.org/" -ForegroundColor Gray
+        return $false
+    }
 
     $projectDir = $PSScriptRoot
 
     Write-Host "  [1/5] 安装项目依赖..." -ForegroundColor Cyan
     Push-Location $projectDir
-    & npm install --silent 2>&1 | Out-Null
+    & npm install 2>&1 | Out-Null
+    if (-not (Test-Path (Join-Path $projectDir "node_modules"))) {
+        Write-Host "  [x] 依赖安装失败，请检查网络连接" -ForegroundColor Red
+        Pop-Location
+        return $false
+    }
     Pop-Location
     Write-Host "  [ok] 完成" -ForegroundColor Green
 
@@ -254,6 +266,58 @@ if (-not $installed) {
 # ══════════════════════════════════════
 while ($true) {
     Write-Banner
+
+    # ── 状态检测 ──
+    # 浏览器
+    $browserName = "未配置"
+    if (Test-Path $ConfigFile) {
+        try {
+            $cfg = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+            $exePath = $cfg.browser.executablePath
+            if ($exePath -and (Test-Path $exePath)) {
+                $browserName = (Split-Path $exePath -Leaf) -replace '\.exe$',''
+            } elseif ($exePath) {
+                $browserName = "$((Split-Path $exePath -Leaf)) (未找到)"
+            }
+        } catch {}
+    }
+    # 已登录账号
+    $loggedIn = @()
+    if (Test-Path $ConfigFile) {
+        try {
+            $cfg = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+            $profiles = $cfg.auth.profiles.PSObject.Properties.Name
+            foreach ($p in $profiles) {
+                $providerId = ($p -split ':')[0]
+                $match = $Providers | Where-Object { $_.Id -eq $providerId }
+                if ($match) { $loggedIn += $match.Label }
+            }
+        } catch {}
+    }
+    # 网关状态
+    $gwRunning = $false
+    try {
+        $conn = Get-NetTCPConnection -LocalPort 18789 -State Listen -ErrorAction SilentlyContinue
+        if ($conn) { $gwRunning = $true }
+    } catch {}
+
+    Write-Host "  ── 当前状态 ──" -ForegroundColor DarkGray
+    Write-Host "    浏览器: " -NoNewline -ForegroundColor DarkGray
+    Write-Host $browserName -ForegroundColor Yellow
+    Write-Host "    已登录: " -NoNewline -ForegroundColor DarkGray
+    if ($loggedIn.Count -gt 0) {
+        Write-Host ($loggedIn -join ", ") -ForegroundColor Green
+    } else {
+        Write-Host "无" -ForegroundColor Red
+    }
+    Write-Host "    网关:   " -NoNewline -ForegroundColor DarkGray
+    if ($gwRunning) {
+        Write-Host "运行中 (端口 18789)" -ForegroundColor Green
+    } else {
+        Write-Host "未启动" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+
     Write-Host "    [1] 登录 AI 账号" -ForegroundColor White
     Write-Host "    [2] 启动服务并打开网页" -ForegroundColor White
     Write-Host "    [3] 重新安装 / 更新插件" -ForegroundColor White

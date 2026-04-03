@@ -11,8 +11,10 @@ import {
   ClaudeWebClientBrowser,
   type ClaudeWebClientOptions,
 } from "../providers/claude-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
+import { LruMap } from "../utils/lru-map.js";
 
-const sessionMap = new Map<string, string>();
+const sessionMap = new LruMap<string, string>();
 
 export function createClaudeWebStreamFn(cookieOrJson: string): StreamFn {
   let options: ClaudeWebClientOptions;
@@ -140,12 +142,12 @@ export function createClaudeWebStreamFn(cookieOrJson: string): StreamFn {
         console.log(`[ClaudeWebStream] Tools available: ${tools.length}`);
         console.log(`[ClaudeWebStream] Prompt length: ${prompt.length}`);
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           conversationId: sessionId,
           message: prompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "Claude" });
 
         if (!responseStream) {
           throw new Error("ClaudeWeb API returned empty response body");
@@ -217,7 +219,7 @@ export function createClaudeWebStreamFn(cookieOrJson: string): StreamFn {
                 partial: createPartial(),
               });
             } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,

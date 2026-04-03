@@ -12,6 +12,8 @@ import {
   DeepSeekWebClient,
   type DeepSeekWebClientOptions,
 } from "../providers/deepseek-web-client.js";
+import { withRetry } from "../utils/retry.js";
+import { LruMap } from "../utils/lru-map.js";
 
 // Helper to strip messages for web providers
 function stripForWebProvider(prompt: string): string {
@@ -19,7 +21,7 @@ function stripForWebProvider(prompt: string): string {
 }
 
 // Keep track of session IDs per session key to avoid creating too many web chat sessions
-const sessionMap = new Map<string, string>();
+const sessionMap = new LruMap<string, string>();
 const parentMessageMap = new Map<string, string | number>();
 
 type MessageContentPart = {
@@ -211,7 +213,7 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
           parentId = undefined;
         }
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           sessionId: dsSessionId,
           parentMessageId: parentId,
           message: prompt,
@@ -220,7 +222,7 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
           preempt,
           fileIds,
           signal: options?.signal,
-        });
+        }), { label: "DeepSeek" });
 
         if (!responseStream) {
           throw new Error("DeepSeek Web API returned empty response body");
@@ -292,7 +294,7 @@ export function createDeepseekWebStreamFn(cookieOrJson: string): StreamFn {
                 partial: createPartial(),
               });
             } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,

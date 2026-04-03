@@ -11,8 +11,10 @@ import {
   KimiWebClientBrowser,
   type KimiWebClientOptions,
 } from "../providers/kimi-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
+import { LruMap } from "../utils/lru-map.js";
 
-const sessionMap = new Map<string, string>();
+const sessionMap = new LruMap<string, string>();
 
 export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
   let options: KimiWebClientOptions;
@@ -144,12 +146,12 @@ export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
         console.log(`[KimiWebStream] Tools available: ${tools.length}`);
         console.log(`[KimiWebStream] Prompt length: ${prompt.length}`);
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           conversationId: sessionId,
           message: prompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "Kimi" });
 
         if (!responseStream) {
           throw new Error("KimiWeb API returned empty response body");
@@ -221,7 +223,7 @@ export function createKimiWebStreamFn(cookieOrJson: string): StreamFn {
                 partial: createPartial(),
               });
             } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,

@@ -8,8 +8,10 @@ import {
   type ToolResultMessage,
 } from "@mariozechner/pi-ai";
 import { ZWebClientBrowser, type ZWebClientOptions } from "../providers/glm-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
+import { LruMap } from "../utils/lru-map.js";
 
-const sessionMap = new Map<string, string>();
+const sessionMap = new LruMap<string, string>();
 
 // Alias for compatibility
 export function createGlmWebStreamFn(cookieOrJson: string): StreamFn {
@@ -142,12 +144,12 @@ export function createZWebStreamFn(cookieOrJson: string): StreamFn {
         console.log(`[ZWebStream] Tools available: ${tools.length}`);
         console.log(`[ZWebStream] Prompt length: ${prompt.length}`);
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           conversationId: sessionId,
           message: prompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "GLM" });
 
         if (!responseStream) {
           throw new Error("ChatGLM API returned empty response body");
@@ -219,7 +221,7 @@ export function createZWebStreamFn(cookieOrJson: string): StreamFn {
                 partial: createPartial(),
               });
             } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,

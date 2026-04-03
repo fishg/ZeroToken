@@ -10,6 +10,7 @@ import {
   GeminiWebClientBrowser,
   type GeminiWebClientOptions,
 } from "../providers/gemini-web-client-browser.js";
+import { withRetry } from "../utils/retry.js";
 
 // Strip inbound metadata blocks that are irrelevant for web model consumption.
 // These blocks are injected by the inbound-meta module into user-role message
@@ -212,12 +213,12 @@ export function createGeminiWebStreamFn(cookieOrJson: string): StreamFn {
           `[GeminiWebStream] Tools: ${tools.length}, prompt length: ${cleanPrompt.length}`,
         );
 
-        const responseStream = await client.chatCompletions({
+        const responseStream = await withRetry(() => client.chatCompletions({
           conversationId,
           message: cleanPrompt,
           model: model.id,
           signal: streamOptions?.signal,
-        });
+        }), { label: "Gemini" });
 
         if (!responseStream) {
           throw new Error("Gemini API returned empty response body");
@@ -271,7 +272,7 @@ export function createGeminiWebStreamFn(cookieOrJson: string): StreamFn {
               contentParts[index] = { type: "text", text: "" };
               stream.push({ type: "text_start", contentIndex: index, partial: createPartial() });
             } else {
-              const toolId = forceId || `call_${Date.now()}_${index}`;
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0,8)}_${index}`;
               contentParts[index] = {
                 type: "toolCall",
                 id: toolId,
