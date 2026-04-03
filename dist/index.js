@@ -1426,9 +1426,6 @@ import * as fs6 from "node:fs";
 import * as os5 from "node:os";
 import * as path6 from "node:path";
 import { registerApiProvider, getApiProvider } from "@mariozechner/pi-ai";
-import {
-  emptyPluginConfigSchema
-} from "openclaw/plugin-sdk/core";
 
 // src/zero-token/bridge/web-providers.ts
 var DEEPSEEK_WEB_BASE_URL = "https://chat.deepseek.com";
@@ -12480,6 +12477,13 @@ No self-talk. Reply in user's language. \u5982\u679C\u7528\u6237\u8BF4\u4E2D\u65
 }
 
 // src/index.ts
+function emptyPluginConfigSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {}
+  };
+}
 var ZERO_TOKEN_GROUP_ID = "zero-token";
 var ZERO_TOKEN_GROUP_LABEL = "Zero Token";
 var ZERO_TOKEN_GROUP_HINT = "Use browser sessions instead of API keys.";
@@ -12677,22 +12681,32 @@ async function runCatalog(ctx, desc) {
     provider: await desc.buildProvider({ apiKey: resolvedApiKey })
   };
 }
-function createConfiguredStreamFn(api, ctx, desc) {
+async function resolveStreamApiKey(api, config, providerId) {
+  const configuredApiKey = config?.models?.providers?.[providerId]?.apiKey;
+  let resolvedApiKey = typeof configuredApiKey === "string" && configuredApiKey.trim().length > 0 ? configuredApiKey.trim() : void 0;
+  if (!resolvedApiKey) {
+    const resolved = await api.runtime.modelAuth.resolveApiKeyForProvider({
+      provider: providerId,
+      cfg: config
+    });
+    resolvedApiKey = resolved.apiKey?.trim() || void 0;
+  }
+  if (!resolvedApiKey) {
+    throw new Error(`No browser-auth credentials found for provider "${providerId}".`);
+  }
+  return resolvedApiKey;
+}
+function createResolvedStreamFn(api, config, desc) {
   return async (model, context, options) => {
-    const configuredApiKey = ctx.config?.models?.providers?.[desc.id]?.apiKey;
-    let resolvedApiKey = typeof configuredApiKey === "string" && configuredApiKey.trim().length > 0 ? configuredApiKey.trim() : void 0;
-    if (!resolvedApiKey) {
-      const resolved = await api.runtime.modelAuth.resolveApiKeyForProvider({
-        provider: desc.id,
-        cfg: ctx.config
-      });
-      resolvedApiKey = resolved.apiKey?.trim() || void 0;
-    }
-    if (!resolvedApiKey) {
-      throw new Error(`No browser-auth credentials found for provider "${desc.id}".`);
-    }
+    const resolvedApiKey = await resolveStreamApiKey(api, config, desc.id);
     return await desc.createStreamFn(resolvedApiKey)(model, context, options);
   };
+}
+function createConfiguredStreamFn(api, ctx, desc) {
+  return createResolvedStreamFn(api, ctx.config, desc);
+}
+function createWrappedStreamFn(api, ctx, desc) {
+  return createResolvedStreamFn(api, ctx.config, desc);
 }
 function buildRegisteredProvider(api, desc) {
   return {
@@ -12717,6 +12731,7 @@ function buildRegisteredProvider(api, desc) {
       run: async (ctx) => await runCatalog(ctx, desc)
     },
     createStreamFn: (ctx) => createConfiguredStreamFn(api, ctx, desc),
+    wrapStreamFn: (ctx) => createWrappedStreamFn(api, ctx, desc),
     wizard: {
       setup: {
         choiceId: desc.id,

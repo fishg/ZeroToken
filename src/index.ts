@@ -4,12 +4,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import { registerApiProvider, getApiProvider } from "@mariozechner/pi-ai";
-import {
-  emptyPluginConfigSchema,
-  type OpenClawPluginApi,
-  type ProviderAuthContext,
-  type ProviderAuthResult,
-} from "openclaw/plugin-sdk/core";
 import { ZERO_TOKEN_PROVIDER_IDS } from "./zero-token/bridge/web-providers.js";
 import {
   buildChatGPTWebProvider,
@@ -62,12 +56,116 @@ import { createQwenCNWebStreamFn } from "./zero-token/streams/qwen-cn-web-stream
 import { createQwenWebStreamFn } from "./zero-token/streams/qwen-web-stream.js";
 import type { ZeroTokenModelProviderConfig } from "./zero-token/types.js";
 
-type RegisteredProvider = Parameters<OpenClawPluginApi["registerProvider"]>[0];
+type ProviderProfileCredential = {
+  type: string;
+  provider: string;
+  key?: string;
+};
+
+type ProviderProfilePatch = {
+  profileId: string;
+  credential: ProviderProfileCredential;
+};
+
+type ProviderAuthResult = {
+  defaultModel?: string;
+  configPatch?: Record<string, unknown>;
+  profiles?: ProviderProfilePatch[];
+  notes?: string[];
+};
+
+type ProviderProgressHandle = {
+  update(message: string): void;
+  stop(message?: string): void;
+};
+
+type ProviderAuthContext = {
+  prompter: {
+    progress(label: string): ProviderProgressHandle;
+  };
+  openUrl(url: string): Promise<void>;
+};
+
+type ProviderCatalogContext = {
+  resolveProviderApiKey(providerId: string): {
+    apiKey?: string | null;
+    discoveryApiKey?: string | null;
+  };
+};
+
+type ProviderCreateStreamFnContext = {
+  config?: any;
+};
+
+type ProviderWrapStreamFnContext = {
+  config?: any;
+  agentDir?: string;
+  workspaceDir?: string;
+  provider: string;
+  modelId: string;
+  extraParams?: Record<string, unknown>;
+  thinkingLevel?: string;
+  model?: any;
+  streamFn?: StreamFn;
+};
+
+type RegisteredProvider = {
+  id: string;
+  label: string;
+  envVars?: string[];
+  auth?: Array<{
+    id: string;
+    label: string;
+    hint?: string;
+    kind: string;
+    run: (ctx: ProviderAuthContext) => Promise<ProviderAuthResult>;
+  }>;
+  catalog?: {
+    order?: string;
+    run?: (ctx: ProviderCatalogContext) => Promise<unknown>;
+  };
+  discovery?: {
+    order?: string;
+    run?: (ctx: ProviderCatalogContext) => Promise<unknown>;
+  };
+  createStreamFn?: (ctx: ProviderCreateStreamFnContext) => StreamFn;
+  wrapStreamFn?: (ctx: ProviderWrapStreamFnContext) => StreamFn;
+  wizard?: {
+    setup?: {
+      choiceId: string;
+      choiceLabel: string;
+      choiceHint?: string;
+      groupId?: string;
+      groupLabel?: string;
+      groupHint?: string;
+      methodId?: string;
+    };
+  };
+};
+
+type OpenClawPluginApi = {
+  registerProvider(provider: RegisteredProvider): void;
+  runtime: {
+    config?: any;
+    modelAuth: {
+      resolveApiKeyForProvider(input: {
+        provider: string;
+        cfg?: any;
+      }): Promise<{ apiKey?: string | null }>;
+    };
+  };
+};
+
+function emptyPluginConfigSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {},
+  };
+}
+
 type ProviderCatalogRun = NonNullable<NonNullable<RegisteredProvider["catalog"]>["run"]>;
-type ProviderCatalogContext = Parameters<ProviderCatalogRun>[0];
 type ProviderCatalogResult = Awaited<ReturnType<ProviderCatalogRun>>;
-type ProviderCreateStreamFn = NonNullable<RegisteredProvider["createStreamFn"]>;
-type ProviderCreateStreamFnContext = Parameters<ProviderCreateStreamFn>[0];
 type BrowserLoginParams = {
   onProgress: (message: string) => void;
   openUrl: (url: string) => Promise<boolean>;
@@ -302,32 +400,57 @@ async function runCatalog(
   };
 }
 
+async function resolveStreamApiKey(
+  api: OpenClawPluginApi,
+  config: any,
+  providerId: string,
+) {
+  const configuredApiKey = config?.models?.providers?.[providerId]?.apiKey;
+  let resolvedApiKey =
+    typeof configuredApiKey === "string" && configuredApiKey.trim().length > 0
+      ? configuredApiKey.trim()
+      : undefined;
+
+  if (!resolvedApiKey) {
+    const resolved = await api.runtime.modelAuth.resolveApiKeyForProvider({
+      provider: providerId,
+      cfg: config,
+    });
+    resolvedApiKey = resolved.apiKey?.trim() || undefined;
+  }
+
+  if (!resolvedApiKey) {
+    throw new Error(`No browser-auth credentials found for provider "${providerId}".`);
+  }
+
+  return resolvedApiKey;
+}
+
+function createResolvedStreamFn(
+  api: OpenClawPluginApi,
+  config: any,
+  desc: WebProviderDescriptor,
+): StreamFn {
+  return async (model, context, options) => {
+    const resolvedApiKey = await resolveStreamApiKey(api, config, desc.id);
+    return await desc.createStreamFn(resolvedApiKey)(model, context, options);
+  };
+}
+
 function createConfiguredStreamFn(
   api: OpenClawPluginApi,
   ctx: ProviderCreateStreamFnContext,
   desc: WebProviderDescriptor,
 ): StreamFn {
-  return async (model, context, options) => {
-    const configuredApiKey = ctx.config?.models?.providers?.[desc.id]?.apiKey;
-    let resolvedApiKey =
-      typeof configuredApiKey === "string" && configuredApiKey.trim().length > 0
-        ? configuredApiKey.trim()
-        : undefined;
+  return createResolvedStreamFn(api, ctx.config, desc);
+}
 
-    if (!resolvedApiKey) {
-      const resolved = await api.runtime.modelAuth.resolveApiKeyForProvider({
-        provider: desc.id,
-        cfg: ctx.config,
-      });
-      resolvedApiKey = resolved.apiKey?.trim() || undefined;
-    }
-
-    if (!resolvedApiKey) {
-      throw new Error(`No browser-auth credentials found for provider "${desc.id}".`);
-    }
-
-    return await desc.createStreamFn(resolvedApiKey)(model, context, options);
-  };
+function createWrappedStreamFn(
+  api: OpenClawPluginApi,
+  ctx: ProviderWrapStreamFnContext,
+  desc: WebProviderDescriptor,
+): StreamFn {
+  return createResolvedStreamFn(api, ctx.config, desc);
 }
 
 function buildRegisteredProvider(
@@ -356,6 +479,7 @@ function buildRegisteredProvider(
       run: async (ctx) => await runCatalog(ctx, desc),
     },
     createStreamFn: (ctx) => createConfiguredStreamFn(api, ctx, desc),
+    wrapStreamFn: (ctx) => createWrappedStreamFn(api, ctx, desc),
     wizard: {
       setup: {
         choiceId: desc.id,
