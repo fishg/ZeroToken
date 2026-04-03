@@ -114,96 +114,115 @@ export class KimiWebClientBrowser {
       throw new Error("Kimi: 未找到 kimi-auth Cookie，请在 Chrome 中登录 www.kimi.com 后再试");
     }
 
+    const scenario = params.model.includes("search")
+      ? "SCENARIO_SEARCH"
+      : params.model.includes("research")
+        ? "SCENARIO_RESEARCH"
+        : params.model.includes("k1")
+          ? "SCENARIO_K1"
+          : "SCENARIO_K2";
+
     const result = await page.evaluate(
       async ({
         baseUrl,
         message,
         kimiAuthToken,
         scenario,
+        conversationId,
       }: {
         baseUrl: string;
         message: string;
         kimiAuthToken: string;
         scenario: string;
+        conversationId?: string;
       }) => {
-        const req = {
-          scenario,
-          message: {
-            role: "user" as const,
-            blocks: [{ message_id: "", text: { content: message } }],
-            scenario,
-          },
-          options: { thinking: false },
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          Accept: "*/*",
+          Origin: baseUrl,
+          Referer: `${baseUrl}/`,
+          "X-Language": "zh-CN",
+          "X-Msh-Platform": "web",
+          Authorization: `Bearer ${kimiAuthToken}`,
         };
-        const enc = new TextEncoder().encode(JSON.stringify(req));
-        const buf = new ArrayBuffer(5 + enc.byteLength);
-        const dv = new DataView(buf);
-        dv.setUint8(0, 0x00);
-        dv.setUint32(1, enc.byteLength, false);
-        new Uint8Array(buf, 5).set(enc);
 
-        const res = await fetch(`${baseUrl}/apiv2/kimi.gateway.chat.v1.ChatService/Chat`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/connect+json",
-            "Connect-Protocol-Version": "1",
-            Accept: "*/*",
-            Origin: baseUrl,
-            Referer: `${baseUrl}/`,
-            "X-Language": "zh-CN",
-            "X-Msh-Platform": "web",
-            Authorization: `Bearer ${kimiAuthToken}`,
-          },
-          body: buf,
-        });
-
-        if (!res.ok) {
-          const text = await res.text();
-          return { ok: false as const, error: text.slice(0, 400) };
-        }
-        const arr = await res.arrayBuffer();
-        const u8 = new Uint8Array(arr);
-        const texts: string[] = [];
-        let o = 0;
-        while (o + 5 <= u8.length) {
-          const len = new DataView(u8.buffer, u8.byteOffset + o + 1, 4).getUint32(0, false);
-          if (o + 5 + len > u8.length) {
-            break;
-          }
-          const chunk = u8.slice(o + 5, o + 5 + len);
+        // Step 1: Create a new conversation if needed
+        let convId = conversationId || "";
+        if (!convId) {
           try {
-            const obj = JSON.parse(new TextDecoder().decode(chunk));
-            if (obj.error) {
-              return {
-                ok: false as const,
-                error:
-                  obj.error.message || obj.error.code || JSON.stringify(obj.error).slice(0, 200),
-              };
+            const createRes = await fetch(`${baseUrl}/api/chat`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                name: "New Chat",
+                is_example: false,
+                born_from: "",
+                kimiplus_id: "",
+              }),
+            });
+            if (createRes.ok) {
+              const convData = await createRes.json();
+              convId = convData.id || "";
             }
-            if (obj.block?.text?.content && ["set", "append"].includes(obj.op || "")) {
-              texts.push(obj.block.text.content);
+            if (!convId) {
+              return { ok: false as const, error: "Failed to create Kimi conversation" };
             }
-            if (obj.done) {
-              break;
-            }
-          } catch {
-            // ignore parse errors for non-JSON chunks
+          } catch (e: unknown) {
+            return { ok: false as const, error: `Create conversation failed: ${e instanceof Error ? e.message : String(e)}` };
           }
-          o += 5 + len;
         }
-        return { ok: true as const, text: texts.join("") };
+
+        // Step 2: Send message to the conversation using SSE streaming
+        try {
+          const chatRes = await fetch(`${baseUrl}/api/chat/${convId}/completion/stream`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              messages: [{ role: "user", content: message }],
+              refs: [],
+              use_search: false,
+              kimiplus_id: "",
+            }),
+          });
+
+          if (!chatRes.ok) {
+            const errText = await chatRes.text();
+            return { ok: false as const, error: `HTTP ${chatRes.status}: ${errText.slice(0, 400)}` };
+          }
+
+          const text = await chatRes.text();
+          const lines = text.split("\n");
+          const texts: string[] = [];
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") break;
+            try {
+              const obj = JSON.parse(data);
+              if (obj.error) {
+                return { ok: false as const, error: obj.error.message || JSON.stringify(obj.error).slice(0, 200) };
+              }
+              // Kimi SSE: event text has content field
+              if (obj.event === "cmpl" && obj.text) {
+                texts.push(obj.text);
+              }
+            } catch {
+              // skip non-JSON lines
+            }
+          }
+
+          return { ok: true as const, text: texts.join(""), convId };
+        } catch (e: unknown) {
+          return { ok: false as const, error: `Chat request failed: ${e instanceof Error ? e.message : String(e)}` };
+        }
       },
       {
         baseUrl: this.baseUrl,
         message: params.message,
         kimiAuthToken: kimiAuth,
-        scenario: params.model.includes("search")
-          ? "SCENARIO_SEARCH"
-          : params.model.includes("research")
-            ? "SCENARIO_RESEARCH"
-            : params.model.includes("k1")
-              ? "SCENARIO_K1"
-              : "SCENARIO_K2",
+        scenario,
+        conversationId: params.conversationId,
       },
     );
 
@@ -211,8 +230,12 @@ export class KimiWebClientBrowser {
       throw new Error(`Kimi API 错误: ${result.error}`);
     }
 
+    console.log(`[Kimi Web] API response: textLen=${result.text.length}, convId=${(result as { convId?: string }).convId}`);
+
     const escaped = JSON.stringify(result.text);
-    const sse = `data: {"text":${escaped}}\n\ndata: [DONE]\n\n`;
+    const convId = (result as { convId?: string }).convId || "";
+    // Include conversation ID in SSE so stream can track it
+    const sse = `data: {"text":${escaped},"conversation_id":"${convId}"}\n\ndata: [DONE]\n\n`;
     const encoder = new TextEncoder();
     return new ReadableStream({
       start(controller) {

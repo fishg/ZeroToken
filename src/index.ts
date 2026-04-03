@@ -23,7 +23,6 @@ import {
   buildPerplexityWebProvider,
   buildQwenCNWebProvider,
   buildQwenWebProvider,
-  buildXiaomiMimoWebProvider,
   buildZWebProvider,
   CHATGPT_WEB_DEFAULT_MODEL_ID,
   CLAUDE_WEB_DEFAULT_MODEL_ID,
@@ -48,7 +47,6 @@ import { loginKimiWeb } from "./zero-token/providers/kimi-web-auth.js";
 import { loginPerplexityWeb } from "./zero-token/providers/perplexity-web-auth.js";
 import { loginQwenCNWeb } from "./zero-token/providers/qwen-cn-web-auth.js";
 import { loginQwenWeb } from "./zero-token/providers/qwen-web-auth.js";
-import { loginXiaomiMimoWeb } from "./zero-token/providers/xiaomimo-web-auth.js";
 import { loginZWeb } from "./zero-token/providers/glm-web-auth.js";
 import { createChatGPTWebStreamFn } from "./zero-token/streams/chatgpt-web-stream.js";
 import { createClaudeWebStreamFn } from "./zero-token/streams/claude-web-stream.js";
@@ -62,7 +60,6 @@ import { createKimiWebStreamFn } from "./zero-token/streams/kimi-web-stream.js";
 import { createPerplexityWebStreamFn } from "./zero-token/streams/perplexity-web-stream.js";
 import { createQwenCNWebStreamFn } from "./zero-token/streams/qwen-cn-web-stream.js";
 import { createQwenWebStreamFn } from "./zero-token/streams/qwen-web-stream.js";
-import { createXiaomiMimoWebStreamFn } from "./zero-token/streams/xiaomimo-web-stream.js";
 import type { ZeroTokenModelProviderConfig } from "./zero-token/types.js";
 
 type RegisteredProvider = Parameters<OpenClawPluginApi["registerProvider"]>[0];
@@ -201,15 +198,6 @@ const WEB_PROVIDERS: WebProviderDescriptor[] = [
     buildProvider: buildQwenWebProvider,
     createStreamFn: createQwenWebStreamFn,
     login: loginQwenWeb,
-  },
-  {
-    id: "xiaomimo-web",
-    label: "Xiaomi MiMo (Web)",
-    envVar: "XIAOMIMO_WEB_COOKIE",
-    defaultModelId: "xiaomimo-chat",
-    buildProvider: buildXiaomiMimoWebProvider,
-    createStreamFn: createXiaomiMimoWebStreamFn,
-    login: loginXiaomiMimoWeb,
   },
 ];
 

@@ -21,7 +21,6 @@ export const ZERO_TOKEN_PROVIDER_IDS = [
   "perplexity-web",
   "qwen-cn-web",
   "qwen-web",
-  "xiaomimo-web",
 ] as const;
 
 export const DEEPSEEK_WEB_BASE_URL = "https://chat.deepseek.com";
@@ -144,10 +143,6 @@ const QWEN_CN_WEB_DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite
 const QWEN_CN_WEB_DEFAULT_CONTEXT_WINDOW = 128000;
 const QWEN_CN_WEB_DEFAULT_MAX_TOKENS = 4096;
 
-const XIAOMIMO_WEB_BASE_URL = "https://aistudio.xiaomimimo.com";
-const XIAOMIMO_WEB_DEFAULT_CONTEXT_WINDOW = 128000;
-const XIAOMIMO_WEB_DEFAULT_MAX_TOKENS = 4096;
-const XIAOMIMO_WEB_DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 export async function discoverDeepseekWebModels(_params?: {
   _?: never;
@@ -317,6 +312,15 @@ export async function buildQwenWebProvider(_params?: {
     api: "openai-completions",
     models: [
       {
+        id: "qwen3.6-plus",
+        name: "Qwen 3.6 Plus",
+        reasoning: false,
+        input: ["text"],
+        cost: QWEN_WEB_DEFAULT_COST,
+        contextWindow: QWEN_WEB_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS,
+      },
+      {
         id: "qwen3.5-plus",
         name: "Qwen 3.5 Plus",
         reasoning: false,
@@ -324,7 +328,7 @@ export async function buildQwenWebProvider(_params?: {
         cost: QWEN_WEB_DEFAULT_COST,
         contextWindow: QWEN_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS,
-        },
+      },
     ],
   };
 }
@@ -530,23 +534,3 @@ export async function buildPerplexityWebProvider(_params?: {
   };
 }
 
-export function buildXiaomiMimoWebProvider(_params?: {
-  _?: never;
-  apiKey?: string;
-}): ProviderConfig {
-  return {
-    baseUrl: XIAOMIMO_WEB_BASE_URL,
-    api: "openai-completions",
-    models: [
-      {
-        id: "xiaomimo-chat",
-        name: "MiMo Chat",
-        reasoning: false,
-        input: ["text"],
-        cost: XIAOMIMO_WEB_DEFAULT_COST,
-        contextWindow: XIAOMIMO_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: XIAOMIMO_WEB_DEFAULT_MAX_TOKENS,
-        },
-    ],
-  };
-}

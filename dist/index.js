@@ -605,6 +605,132 @@ ${m.content}
   }
 });
 
+// src/zero-token/providers/config-paths.ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+function resolveHomeDir() {
+  return os.homedir();
+}
+function expandHome(input) {
+  if (!input.startsWith("~")) {
+    return path.resolve(input);
+  }
+  return path.resolve(path.join(resolveHomeDir(), input.slice(1)));
+}
+function resolveStateDir(env = process.env) {
+  const override = env.OPENCLAW_STATE_DIR?.trim() || env.CLAWDBOT_STATE_DIR?.trim();
+  if (override) {
+    return expandHome(override);
+  }
+  return path.join(resolveHomeDir(), ".openclaw");
+}
+function resolveConfigPathCandidate(env = process.env) {
+  const explicit = env.OPENCLAW_CONFIG_PATH?.trim() || env.CLAWDBOT_CONFIG_PATH?.trim();
+  if (explicit) {
+    return expandHome(explicit);
+  }
+  const home = resolveHomeDir();
+  const stateDir = resolveStateDir(env);
+  const candidates = [
+    path.join(stateDir, "openclaw.json"),
+    path.join(home, ".openclaw", "openclaw.json"),
+    path.join(home, ".clawdbot", "clawdbot.json"),
+    path.join(home, ".moldbot", "moldbot.json"),
+    path.join(home, ".moltbot", "moltbot.json")
+  ];
+  const existing = candidates.find((candidate) => {
+    try {
+      return fs.existsSync(candidate);
+    } catch {
+      return false;
+    }
+  });
+  return existing ?? candidates[0] ?? path.join(stateDir, "openclaw.json");
+}
+var init_config_paths = __esm({
+  "src/zero-token/providers/config-paths.ts"() {
+  }
+});
+
+// src/zero-token/providers/port-defaults.ts
+function isValidPort(port) {
+  return Number.isFinite(port) && port > 0 && port <= 65535;
+}
+function clampPort(port, fallback) {
+  return isValidPort(port) ? port : fallback;
+}
+function derivePort(base, offset, fallback) {
+  return clampPort(base + offset, fallback);
+}
+function deriveDefaultBrowserControlPort(gatewayPort) {
+  return derivePort(gatewayPort, 2, DEFAULT_BROWSER_CONTROL_PORT);
+}
+function deriveDefaultBrowserCdpPortRange(browserControlPort) {
+  const start = derivePort(browserControlPort, 9, DEFAULT_BROWSER_CDP_PORT_RANGE_START);
+  const end = clampPort(
+    start + (DEFAULT_BROWSER_CDP_PORT_RANGE_END - DEFAULT_BROWSER_CDP_PORT_RANGE_START),
+    DEFAULT_BROWSER_CDP_PORT_RANGE_END
+  );
+  if (end < start) {
+    return { start, end: start };
+  }
+  return { start, end };
+}
+var DEFAULT_BROWSER_CONTROL_PORT, DEFAULT_BROWSER_CDP_PORT_RANGE_START, DEFAULT_BROWSER_CDP_PORT_RANGE_END;
+var init_port_defaults = __esm({
+  "src/zero-token/providers/port-defaults.ts"() {
+    DEFAULT_BROWSER_CONTROL_PORT = 18791;
+    DEFAULT_BROWSER_CDP_PORT_RANGE_START = 18800;
+    DEFAULT_BROWSER_CDP_PORT_RANGE_END = 18899;
+  }
+});
+
+// src/zero-token/providers/browser-constants.ts
+var DEFAULT_OPENCLAW_BROWSER_ENABLED, DEFAULT_BROWSER_EVALUATE_ENABLED, DEFAULT_OPENCLAW_BROWSER_COLOR, DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME, DEFAULT_BROWSER_DEFAULT_PROFILE_NAME;
+var init_browser_constants = __esm({
+  "src/zero-token/providers/browser-constants.ts"() {
+    DEFAULT_OPENCLAW_BROWSER_ENABLED = true;
+    DEFAULT_BROWSER_EVALUATE_ENABLED = true;
+    DEFAULT_OPENCLAW_BROWSER_COLOR = "#FF4500";
+    DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME = "openclaw";
+    DEFAULT_BROWSER_DEFAULT_PROFILE_NAME = "openclaw";
+  }
+});
+
+// src/zero-token/providers/browser-profiles.ts
+function getUsedPorts(profiles) {
+  if (!profiles) {
+    return /* @__PURE__ */ new Set();
+  }
+  const used = /* @__PURE__ */ new Set();
+  for (const profile of Object.values(profiles)) {
+    if (typeof profile.cdpPort === "number") {
+      used.add(profile.cdpPort);
+      continue;
+    }
+    const rawUrl = profile.cdpUrl?.trim();
+    if (!rawUrl) {
+      continue;
+    }
+    try {
+      const parsed = new URL(rawUrl);
+      const port = parsed.port && Number.parseInt(parsed.port, 10) > 0 ? Number.parseInt(parsed.port, 10) : parsed.protocol === "https:" ? 443 : 80;
+      if (!Number.isNaN(port) && port > 0 && port <= 65535) {
+        used.add(port);
+      }
+    } catch {
+    }
+  }
+  return used;
+}
+var CDP_PORT_RANGE_START;
+var init_browser_profiles = __esm({
+  "src/zero-token/providers/browser-profiles.ts"() {
+    CDP_PORT_RANGE_START = 18800;
+  }
+});
+
 // src/zero-token/providers/browser-cdp.ts
 function isLoopbackHost(host) {
   const normalized = host.trim().toLowerCase();
@@ -660,1079 +786,6 @@ function normalizeCdpWsUrl(wsUrl, cdpUrl) {
 }
 var init_browser_cdp = __esm({
   "src/zero-token/providers/browser-cdp.ts"() {
-  }
-});
-
-// src/zero-token/providers/config-paths.ts
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-function resolveHomeDir() {
-  return os.homedir();
-}
-function expandHome(input) {
-  if (!input.startsWith("~")) {
-    return path.resolve(input);
-  }
-  return path.resolve(path.join(resolveHomeDir(), input.slice(1)));
-}
-function resolveStateDir(env = process.env) {
-  const override = env.OPENCLAW_STATE_DIR?.trim() || env.CLAWDBOT_STATE_DIR?.trim();
-  if (override) {
-    return expandHome(override);
-  }
-  return path.join(resolveHomeDir(), ".openclaw");
-}
-function resolveConfigPathCandidate(env = process.env) {
-  const explicit = env.OPENCLAW_CONFIG_PATH?.trim() || env.CLAWDBOT_CONFIG_PATH?.trim();
-  if (explicit) {
-    return expandHome(explicit);
-  }
-  const home = resolveHomeDir();
-  const stateDir = resolveStateDir(env);
-  const candidates = [
-    path.join(stateDir, "openclaw.json"),
-    path.join(home, ".openclaw", "openclaw.json"),
-    path.join(home, ".clawdbot", "clawdbot.json"),
-    path.join(home, ".moldbot", "moldbot.json"),
-    path.join(home, ".moltbot", "moltbot.json")
-  ];
-  const existing = candidates.find((candidate) => {
-    try {
-      return fs.existsSync(candidate);
-    } catch {
-      return false;
-    }
-  });
-  return existing ?? candidates[0] ?? path.join(stateDir, "openclaw.json");
-}
-var init_config_paths = __esm({
-  "src/zero-token/providers/config-paths.ts"() {
-  }
-});
-
-// src/zero-token/providers/chrome.executables.ts
-import { execFileSync } from "node:child_process";
-import fs2 from "node:fs";
-import os2 from "node:os";
-import path2 from "node:path";
-function exists(filePath) {
-  try {
-    return fs2.existsSync(filePath);
-  } catch {
-    return false;
-  }
-}
-function execText(command, args, timeoutMs = 1200, maxBuffer = 1024 * 1024) {
-  try {
-    const output = execFileSync(command, args, {
-      timeout: timeoutMs,
-      encoding: "utf8",
-      maxBuffer
-    });
-    return String(output ?? "").trim() || null;
-  } catch {
-    return null;
-  }
-}
-function inferKindFromIdentifier(identifier) {
-  const id = identifier.toLowerCase();
-  if (id.includes("brave")) {
-    return "brave";
-  }
-  if (id.includes("edge")) {
-    return "edge";
-  }
-  if (id.includes("chromium")) {
-    return "chromium";
-  }
-  if (id.includes("canary")) {
-    return "canary";
-  }
-  if (id.includes("opera") || id.includes("vivaldi") || id.includes("yandex") || id.includes("thebrowser")) {
-    return "chromium";
-  }
-  return "chrome";
-}
-function inferKindFromExecutableName(name) {
-  const lower = name.toLowerCase();
-  if (lower.includes("brave")) {
-    return "brave";
-  }
-  if (lower.includes("edge") || lower.includes("msedge")) {
-    return "edge";
-  }
-  if (lower.includes("chromium")) {
-    return "chromium";
-  }
-  if (lower.includes("canary") || lower.includes("sxs")) {
-    return "canary";
-  }
-  if (lower.includes("opera") || lower.includes("vivaldi") || lower.includes("yandex")) {
-    return "chromium";
-  }
-  return "chrome";
-}
-function detectDefaultChromiumExecutable(platform) {
-  if (platform === "darwin") {
-    return detectDefaultChromiumExecutableMac();
-  }
-  if (platform === "linux") {
-    return detectDefaultChromiumExecutableLinux();
-  }
-  if (platform === "win32") {
-    return detectDefaultChromiumExecutableWindows();
-  }
-  return null;
-}
-function detectDefaultChromiumExecutableMac() {
-  const bundleId = detectDefaultBrowserBundleIdMac();
-  if (!bundleId || !CHROMIUM_BUNDLE_IDS.has(bundleId)) {
-    return null;
-  }
-  const appPathRaw = execText("/usr/bin/osascript", [
-    "-e",
-    `POSIX path of (path to application id "${bundleId}")`
-  ]);
-  if (!appPathRaw) {
-    return null;
-  }
-  const appPath = appPathRaw.trim().replace(/\/$/, "");
-  const exeName = execText("/usr/bin/defaults", [
-    "read",
-    path2.join(appPath, "Contents", "Info"),
-    "CFBundleExecutable"
-  ]);
-  if (!exeName) {
-    return null;
-  }
-  const exePath = path2.join(appPath, "Contents", "MacOS", exeName.trim());
-  if (!exists(exePath)) {
-    return null;
-  }
-  return { kind: inferKindFromIdentifier(bundleId), path: exePath };
-}
-function detectDefaultBrowserBundleIdMac() {
-  const plistPath = path2.join(
-    os2.homedir(),
-    "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
-  );
-  if (!exists(plistPath)) {
-    return null;
-  }
-  const handlersRaw = execText(
-    "/usr/bin/plutil",
-    ["-extract", "LSHandlers", "json", "-o", "-", "--", plistPath],
-    2e3,
-    5 * 1024 * 1024
-  );
-  if (!handlersRaw) {
-    return null;
-  }
-  let handlers;
-  try {
-    handlers = JSON.parse(handlersRaw);
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(handlers)) {
-    return null;
-  }
-  const resolveScheme = (scheme) => {
-    let candidate = null;
-    for (const entry of handlers) {
-      if (!entry || typeof entry !== "object") {
-        continue;
-      }
-      const record = entry;
-      if (record.LSHandlerURLScheme !== scheme) {
-        continue;
-      }
-      const role = typeof record.LSHandlerRoleAll === "string" && record.LSHandlerRoleAll || typeof record.LSHandlerRoleViewer === "string" && record.LSHandlerRoleViewer || null;
-      if (role) {
-        candidate = role;
-      }
-    }
-    return candidate;
-  };
-  return resolveScheme("http") ?? resolveScheme("https");
-}
-function detectDefaultChromiumExecutableLinux() {
-  const desktopId = execText("xdg-settings", ["get", "default-web-browser"]) || execText("xdg-mime", ["query", "default", "x-scheme-handler/http"]);
-  if (!desktopId) {
-    return null;
-  }
-  const trimmed = desktopId.trim();
-  if (!CHROMIUM_DESKTOP_IDS.has(trimmed)) {
-    return null;
-  }
-  const desktopPath = findDesktopFilePath(trimmed);
-  if (!desktopPath) {
-    return null;
-  }
-  const execLine = readDesktopExecLine(desktopPath);
-  if (!execLine) {
-    return null;
-  }
-  const command = extractExecutableFromExecLine(execLine);
-  if (!command) {
-    return null;
-  }
-  const resolved = resolveLinuxExecutablePath(command);
-  if (!resolved) {
-    return null;
-  }
-  const exeName = path2.posix.basename(resolved).toLowerCase();
-  if (!CHROMIUM_EXE_NAMES.has(exeName)) {
-    return null;
-  }
-  return { kind: inferKindFromExecutableName(exeName), path: resolved };
-}
-function detectDefaultChromiumExecutableWindows() {
-  const progId = readWindowsProgId();
-  const command = (progId ? readWindowsCommandForProgId(progId) : null) || readWindowsCommandForProgId("http");
-  if (!command) {
-    return null;
-  }
-  const expanded = expandWindowsEnvVars(command);
-  const exePath = extractWindowsExecutablePath(expanded);
-  if (!exePath) {
-    return null;
-  }
-  if (!exists(exePath)) {
-    return null;
-  }
-  const exeName = path2.win32.basename(exePath).toLowerCase();
-  if (!CHROMIUM_EXE_NAMES.has(exeName)) {
-    return null;
-  }
-  return { kind: inferKindFromExecutableName(exeName), path: exePath };
-}
-function findDesktopFilePath(desktopId) {
-  const candidates = [
-    path2.join(os2.homedir(), ".local", "share", "applications", desktopId),
-    path2.join("/usr/local/share/applications", desktopId),
-    path2.join("/usr/share/applications", desktopId),
-    path2.join("/var/lib/snapd/desktop/applications", desktopId)
-  ];
-  for (const candidate of candidates) {
-    if (exists(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-function readDesktopExecLine(desktopPath) {
-  try {
-    const raw = fs2.readFileSync(desktopPath, "utf8");
-    const lines = raw.split(/\r?\n/);
-    for (const line of lines) {
-      if (line.startsWith("Exec=")) {
-        return line.slice("Exec=".length).trim();
-      }
-    }
-  } catch {
-  }
-  return null;
-}
-function extractExecutableFromExecLine(execLine) {
-  const tokens = splitExecLine(execLine);
-  for (const token of tokens) {
-    if (!token) {
-      continue;
-    }
-    if (token === "env") {
-      continue;
-    }
-    if (token.includes("=") && !token.startsWith("/") && !token.includes("\\")) {
-      continue;
-    }
-    return token.replace(/^["']|["']$/g, "");
-  }
-  return null;
-}
-function splitExecLine(line) {
-  const tokens = [];
-  let current = "";
-  let inQuotes = false;
-  let quoteChar = "";
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if ((ch === '"' || ch === "'") && (!inQuotes || ch === quoteChar)) {
-      if (inQuotes) {
-        inQuotes = false;
-        quoteChar = "";
-      } else {
-        inQuotes = true;
-        quoteChar = ch;
-      }
-      continue;
-    }
-    if (!inQuotes && /\s/.test(ch)) {
-      if (current) {
-        tokens.push(current);
-        current = "";
-      }
-      continue;
-    }
-    current += ch;
-  }
-  if (current) {
-    tokens.push(current);
-  }
-  return tokens;
-}
-function resolveLinuxExecutablePath(command) {
-  const cleaned = command.trim().replace(/%[a-zA-Z]/g, "");
-  if (!cleaned) {
-    return null;
-  }
-  if (cleaned.startsWith("/")) {
-    return cleaned;
-  }
-  const resolved = execText("which", [cleaned], 800);
-  return resolved ? resolved.trim() : null;
-}
-function readWindowsProgId() {
-  const output = execText("reg", [
-    "query",
-    "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\http\\UserChoice",
-    "/v",
-    "ProgId"
-  ]);
-  if (!output) {
-    return null;
-  }
-  const match = output.match(/ProgId\s+REG_\w+\s+(.+)$/im);
-  return match?.[1]?.trim() || null;
-}
-function readWindowsCommandForProgId(progId) {
-  const key = progId === "http" ? "HKCR\\http\\shell\\open\\command" : `HKCR\\${progId}\\shell\\open\\command`;
-  const output = execText("reg", ["query", key, "/ve"]);
-  if (!output) {
-    return null;
-  }
-  const match = output.match(/REG_\w+\s+(.+)$/im);
-  return match?.[1]?.trim() || null;
-}
-function expandWindowsEnvVars(value) {
-  return value.replace(/%([^%]+)%/g, (_match, name) => {
-    const key = String(name ?? "").trim();
-    return key ? process.env[key] ?? `%${key}%` : _match;
-  });
-}
-function extractWindowsExecutablePath(command) {
-  const quoted = command.match(/"([^"]+\\.exe)"/i);
-  if (quoted?.[1]) {
-    return quoted[1];
-  }
-  const unquoted = command.match(/([^\\s]+\\.exe)/i);
-  if (unquoted?.[1]) {
-    return unquoted[1];
-  }
-  return null;
-}
-function findFirstExecutable(candidates) {
-  for (const candidate of candidates) {
-    if (exists(candidate.path)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-function findChromeExecutableMac() {
-  const candidates = [
-    {
-      kind: "chrome",
-      path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    },
-    {
-      kind: "chrome",
-      path: path2.join(os2.homedir(), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
-    },
-    {
-      kind: "brave",
-      path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
-    },
-    {
-      kind: "brave",
-      path: path2.join(os2.homedir(), "Applications/Brave Browser.app/Contents/MacOS/Brave Browser")
-    },
-    {
-      kind: "edge",
-      path: "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
-    },
-    {
-      kind: "edge",
-      path: path2.join(
-        os2.homedir(),
-        "Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
-      )
-    },
-    {
-      kind: "chromium",
-      path: "/Applications/Chromium.app/Contents/MacOS/Chromium"
-    },
-    {
-      kind: "chromium",
-      path: path2.join(os2.homedir(), "Applications/Chromium.app/Contents/MacOS/Chromium")
-    },
-    {
-      kind: "canary",
-      path: "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"
-    },
-    {
-      kind: "canary",
-      path: path2.join(
-        os2.homedir(),
-        "Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"
-      )
-    }
-  ];
-  return findFirstExecutable(candidates);
-}
-function findChromeExecutableLinux() {
-  const candidates = [
-    { kind: "chrome", path: "/usr/bin/google-chrome" },
-    { kind: "chrome", path: "/usr/bin/google-chrome-stable" },
-    { kind: "chrome", path: "/usr/bin/chrome" },
-    { kind: "brave", path: "/usr/bin/brave-browser" },
-    { kind: "brave", path: "/usr/bin/brave-browser-stable" },
-    { kind: "brave", path: "/usr/bin/brave" },
-    { kind: "brave", path: "/snap/bin/brave" },
-    { kind: "edge", path: "/usr/bin/microsoft-edge" },
-    { kind: "edge", path: "/usr/bin/microsoft-edge-stable" },
-    { kind: "chromium", path: "/usr/bin/chromium" },
-    { kind: "chromium", path: "/usr/bin/chromium-browser" },
-    { kind: "chromium", path: "/snap/bin/chromium" }
-  ];
-  return findFirstExecutable(candidates);
-}
-function findChromeExecutableWindows() {
-  const localAppData = process.env.LOCALAPPDATA ?? "";
-  const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
-  const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
-  const joinWin = path2.win32.join;
-  const candidates = [];
-  if (localAppData) {
-    candidates.push({
-      kind: "chrome",
-      path: joinWin(localAppData, "Google", "Chrome", "Application", "chrome.exe")
-    });
-    candidates.push({
-      kind: "brave",
-      path: joinWin(localAppData, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
-    });
-    candidates.push({
-      kind: "edge",
-      path: joinWin(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
-    });
-    candidates.push({
-      kind: "chromium",
-      path: joinWin(localAppData, "Chromium", "Application", "chrome.exe")
-    });
-    candidates.push({
-      kind: "canary",
-      path: joinWin(localAppData, "Google", "Chrome SxS", "Application", "chrome.exe")
-    });
-  }
-  candidates.push({
-    kind: "chrome",
-    path: joinWin(programFiles, "Google", "Chrome", "Application", "chrome.exe")
-  });
-  candidates.push({
-    kind: "chrome",
-    path: joinWin(programFilesX86, "Google", "Chrome", "Application", "chrome.exe")
-  });
-  candidates.push({
-    kind: "brave",
-    path: joinWin(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
-  });
-  candidates.push({
-    kind: "brave",
-    path: joinWin(programFilesX86, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
-  });
-  candidates.push({
-    kind: "edge",
-    path: joinWin(programFiles, "Microsoft", "Edge", "Application", "msedge.exe")
-  });
-  candidates.push({
-    kind: "edge",
-    path: joinWin(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe")
-  });
-  return findFirstExecutable(candidates);
-}
-function resolveBrowserExecutableForPlatform(resolved, platform) {
-  if (resolved.executablePath) {
-    if (!exists(resolved.executablePath)) {
-      throw new Error(`browser.executablePath not found: ${resolved.executablePath}`);
-    }
-    return { kind: "custom", path: resolved.executablePath };
-  }
-  const detected = detectDefaultChromiumExecutable(platform);
-  if (detected) {
-    return detected;
-  }
-  if (platform === "darwin") {
-    return findChromeExecutableMac();
-  }
-  if (platform === "linux") {
-    return findChromeExecutableLinux();
-  }
-  if (platform === "win32") {
-    return findChromeExecutableWindows();
-  }
-  return null;
-}
-var CHROMIUM_BUNDLE_IDS, CHROMIUM_DESKTOP_IDS, CHROMIUM_EXE_NAMES;
-var init_chrome_executables = __esm({
-  "src/zero-token/providers/chrome.executables.ts"() {
-    CHROMIUM_BUNDLE_IDS = /* @__PURE__ */ new Set([
-      "com.google.Chrome",
-      "com.google.Chrome.beta",
-      "com.google.Chrome.canary",
-      "com.google.Chrome.dev",
-      "com.brave.Browser",
-      "com.brave.Browser.beta",
-      "com.brave.Browser.nightly",
-      "com.microsoft.Edge",
-      "com.microsoft.EdgeBeta",
-      "com.microsoft.EdgeDev",
-      "com.microsoft.EdgeCanary",
-      "org.chromium.Chromium",
-      "com.vivaldi.Vivaldi",
-      "com.operasoftware.Opera",
-      "com.operasoftware.OperaGX",
-      "com.yandex.desktop.yandex-browser",
-      "company.thebrowser.Browser"
-      // Arc
-    ]);
-    CHROMIUM_DESKTOP_IDS = /* @__PURE__ */ new Set([
-      "google-chrome.desktop",
-      "google-chrome-beta.desktop",
-      "google-chrome-unstable.desktop",
-      "brave-browser.desktop",
-      "microsoft-edge.desktop",
-      "microsoft-edge-beta.desktop",
-      "microsoft-edge-dev.desktop",
-      "microsoft-edge-canary.desktop",
-      "chromium.desktop",
-      "chromium-browser.desktop",
-      "vivaldi.desktop",
-      "vivaldi-stable.desktop",
-      "opera.desktop",
-      "opera-gx.desktop",
-      "yandex-browser.desktop",
-      "org.chromium.Chromium.desktop"
-    ]);
-    CHROMIUM_EXE_NAMES = /* @__PURE__ */ new Set([
-      "chrome.exe",
-      "msedge.exe",
-      "brave.exe",
-      "brave-browser.exe",
-      "chromium.exe",
-      "vivaldi.exe",
-      "opera.exe",
-      "launcher.exe",
-      "yandex.exe",
-      "yandexbrowser.exe",
-      // mac/linux names
-      "google chrome",
-      "google chrome canary",
-      "brave browser",
-      "microsoft edge",
-      "chromium",
-      "chrome",
-      "brave",
-      "msedge",
-      "brave-browser",
-      "google-chrome",
-      "google-chrome-stable",
-      "google-chrome-beta",
-      "google-chrome-unstable",
-      "microsoft-edge",
-      "microsoft-edge-beta",
-      "microsoft-edge-dev",
-      "microsoft-edge-canary",
-      "chromium-browser",
-      "vivaldi",
-      "vivaldi-stable",
-      "opera",
-      "opera-stable",
-      "opera-gx",
-      "yandex-browser"
-    ]);
-  }
-});
-
-// src/zero-token/providers/browser-constants.ts
-var DEFAULT_OPENCLAW_BROWSER_ENABLED, DEFAULT_BROWSER_EVALUATE_ENABLED, DEFAULT_OPENCLAW_BROWSER_COLOR, DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME, DEFAULT_BROWSER_DEFAULT_PROFILE_NAME;
-var init_browser_constants = __esm({
-  "src/zero-token/providers/browser-constants.ts"() {
-    DEFAULT_OPENCLAW_BROWSER_ENABLED = true;
-    DEFAULT_BROWSER_EVALUATE_ENABLED = true;
-    DEFAULT_OPENCLAW_BROWSER_COLOR = "#FF4500";
-    DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME = "openclaw";
-    DEFAULT_BROWSER_DEFAULT_PROFILE_NAME = "openclaw";
-  }
-});
-
-// src/zero-token/providers/chrome.profile-decoration.ts
-import fs3 from "node:fs";
-import path3 from "node:path";
-function decoratedMarkerPath(userDataDir) {
-  return path3.join(userDataDir, ".openclaw-profile-decorated");
-}
-function safeReadJson(filePath) {
-  try {
-    if (!fs3.existsSync(filePath)) {
-      return null;
-    }
-    const raw = fs3.readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-function safeWriteJson(filePath, data) {
-  fs3.mkdirSync(path3.dirname(filePath), { recursive: true });
-  fs3.writeFileSync(filePath, JSON.stringify(data, null, 2));
-}
-function setDeep(obj, keys, value) {
-  let node = obj;
-  for (const key of keys.slice(0, -1)) {
-    const next = node[key];
-    if (typeof next !== "object" || next === null || Array.isArray(next)) {
-      node[key] = {};
-    }
-    node = node[key];
-  }
-  node[keys[keys.length - 1] ?? ""] = value;
-}
-function parseHexRgbToSignedArgbInt(hex) {
-  const cleaned = hex.trim().replace(/^#/, "");
-  if (!/^[0-9a-fA-F]{6}$/.test(cleaned)) {
-    return null;
-  }
-  const rgb = Number.parseInt(cleaned, 16);
-  const argbUnsigned = 255 << 24 | rgb;
-  return argbUnsigned > 2147483647 ? argbUnsigned - 4294967296 : argbUnsigned;
-}
-function isProfileDecorated(userDataDir, desiredName, desiredColorHex) {
-  const desiredColorInt = parseHexRgbToSignedArgbInt(desiredColorHex);
-  const localStatePath = path3.join(userDataDir, "Local State");
-  const preferencesPath = path3.join(userDataDir, "Default", "Preferences");
-  const localState = safeReadJson(localStatePath);
-  const profile = localState?.profile;
-  const infoCache = typeof profile === "object" && profile !== null && !Array.isArray(profile) ? profile.info_cache : null;
-  const info = typeof infoCache === "object" && infoCache !== null && !Array.isArray(infoCache) && typeof infoCache.Default === "object" && infoCache.Default !== null && !Array.isArray(infoCache.Default) ? infoCache.Default : null;
-  const prefs = safeReadJson(preferencesPath);
-  const browserTheme = (() => {
-    const browser = prefs?.browser;
-    const theme = typeof browser === "object" && browser !== null && !Array.isArray(browser) ? browser.theme : null;
-    return typeof theme === "object" && theme !== null && !Array.isArray(theme) ? theme : null;
-  })();
-  const autogeneratedTheme = (() => {
-    const autogenerated = prefs?.autogenerated;
-    const theme = typeof autogenerated === "object" && autogenerated !== null && !Array.isArray(autogenerated) ? autogenerated.theme : null;
-    return typeof theme === "object" && theme !== null && !Array.isArray(theme) ? theme : null;
-  })();
-  const nameOk = typeof info?.name === "string" ? info.name === desiredName : true;
-  if (desiredColorInt == null) {
-    return nameOk;
-  }
-  const localSeedOk = typeof info?.profile_color_seed === "number" ? info.profile_color_seed === desiredColorInt : false;
-  const prefOk = typeof browserTheme?.user_color2 === "number" && browserTheme.user_color2 === desiredColorInt || typeof autogeneratedTheme?.color === "number" && autogeneratedTheme.color === desiredColorInt;
-  return nameOk && localSeedOk && prefOk;
-}
-function decorateOpenClawProfile(userDataDir, opts) {
-  const desiredName = opts?.name ?? DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME;
-  const desiredColor = (opts?.color ?? DEFAULT_OPENCLAW_BROWSER_COLOR).toUpperCase();
-  const desiredColorInt = parseHexRgbToSignedArgbInt(desiredColor);
-  const localStatePath = path3.join(userDataDir, "Local State");
-  const preferencesPath = path3.join(userDataDir, "Default", "Preferences");
-  const localState = safeReadJson(localStatePath) ?? {};
-  setDeep(localState, ["profile", "info_cache", "Default", "name"], desiredName);
-  setDeep(localState, ["profile", "info_cache", "Default", "shortcut_name"], desiredName);
-  setDeep(localState, ["profile", "info_cache", "Default", "user_name"], desiredName);
-  setDeep(localState, ["profile", "info_cache", "Default", "profile_color"], desiredColor);
-  setDeep(localState, ["profile", "info_cache", "Default", "user_color"], desiredColor);
-  if (desiredColorInt != null) {
-    setDeep(
-      localState,
-      ["profile", "info_cache", "Default", "profile_color_seed"],
-      desiredColorInt
-    );
-    setDeep(
-      localState,
-      ["profile", "info_cache", "Default", "profile_highlight_color"],
-      desiredColorInt
-    );
-    setDeep(
-      localState,
-      ["profile", "info_cache", "Default", "default_avatar_fill_color"],
-      desiredColorInt
-    );
-    setDeep(
-      localState,
-      ["profile", "info_cache", "Default", "default_avatar_stroke_color"],
-      desiredColorInt
-    );
-  }
-  safeWriteJson(localStatePath, localState);
-  const prefs = safeReadJson(preferencesPath) ?? {};
-  setDeep(prefs, ["profile", "name"], desiredName);
-  setDeep(prefs, ["profile", "profile_color"], desiredColor);
-  setDeep(prefs, ["profile", "user_color"], desiredColor);
-  if (desiredColorInt != null) {
-    setDeep(prefs, ["autogenerated", "theme", "color"], desiredColorInt);
-    setDeep(prefs, ["browser", "theme", "user_color2"], desiredColorInt);
-  }
-  safeWriteJson(preferencesPath, prefs);
-  try {
-    fs3.writeFileSync(decoratedMarkerPath(userDataDir), `${Date.now()}
-`, "utf-8");
-  } catch {
-  }
-}
-function ensureProfileCleanExit(userDataDir) {
-  const preferencesPath = path3.join(userDataDir, "Default", "Preferences");
-  const prefs = safeReadJson(preferencesPath) ?? {};
-  setDeep(prefs, ["exit_type"], "Normal");
-  setDeep(prefs, ["exited_cleanly"], true);
-  safeWriteJson(preferencesPath, prefs);
-}
-var init_chrome_profile_decoration = __esm({
-  "src/zero-token/providers/chrome.profile-decoration.ts"() {
-    init_browser_constants();
-  }
-});
-
-// src/zero-token/providers/browser-chrome.ts
-import { execSync, spawn } from "node:child_process";
-import fs4 from "node:fs";
-import net from "node:net";
-import os3 from "node:os";
-import path4 from "node:path";
-import WebSocket from "ws";
-function exists2(filePath) {
-  try {
-    return fs4.existsSync(filePath);
-  } catch {
-    return false;
-  }
-}
-async function ensurePortAvailable(port, host = "127.0.0.1") {
-  await new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", (error) => {
-      server.close();
-      reject(error);
-    });
-    server.listen(port, host, () => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
-  });
-}
-function resolveBrowserExecutable(resolved) {
-  return resolveBrowserExecutableForPlatform(resolved, process.platform);
-}
-function resolveOpenClawUserDataDir(profileName = DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME) {
-  return path4.join(resolveStateDir(), "browser", profileName, "user-data");
-}
-function cdpUrlForPort(cdpPort) {
-  return `http://127.0.0.1:${cdpPort}`;
-}
-async function fetchChromeVersion(cdpUrl, timeoutMs = 500) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const versionUrl = appendCdpPath(cdpUrl, "/json/version");
-    const response = await fetch(versionUrl, {
-      signal: ctrl.signal,
-      headers: getHeadersWithAuth(versionUrl)
-    });
-    if (!response.ok) {
-      return null;
-    }
-    const data = await response.json();
-    return data && typeof data === "object" ? data : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-async function isChromeReachable(cdpUrl, timeoutMs = 500) {
-  const version = await fetchChromeVersion(cdpUrl, timeoutMs);
-  return Boolean(version);
-}
-async function getChromeWebSocketUrl(cdpUrl, timeoutMs = 500) {
-  const version = await fetchChromeVersion(cdpUrl, timeoutMs);
-  const wsUrl = String(version?.webSocketDebuggerUrl ?? "").trim();
-  if (!wsUrl) {
-    return null;
-  }
-  return normalizeCdpWsUrl(wsUrl, cdpUrl);
-}
-async function canOpenWebSocket(wsUrl, timeoutMs = 800) {
-  return await new Promise((resolve) => {
-    const headers = getHeadersWithAuth(wsUrl);
-    const ws = new WebSocket(wsUrl, {
-      handshakeTimeout: timeoutMs,
-      ...Object.keys(headers).length ? { headers } : {}
-    });
-    const timer = setTimeout(() => {
-      try {
-        ws.terminate();
-      } catch {
-      }
-      resolve(false);
-    }, Math.max(50, timeoutMs + 25));
-    ws.once("open", () => {
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {
-      }
-      resolve(true);
-    });
-    ws.once("error", () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
-  });
-}
-async function launchOpenClawChrome(resolved, profile) {
-  if (!profile.cdpIsLoopback) {
-    throw new Error(`Profile "${profile.name}" is remote; cannot launch local Chrome.`);
-  }
-  await ensurePortAvailable(profile.cdpPort);
-  const exe = resolveBrowserExecutable(resolved);
-  if (!exe) {
-    throw new Error(
-      "No supported browser found (Chrome/Brave/Edge/Chromium on macOS, Linux, or Windows)."
-    );
-  }
-  const userDataDir = resolveOpenClawUserDataDir(profile.name);
-  fs4.mkdirSync(userDataDir, { recursive: true });
-  const needsDecorate = !isProfileDecorated(
-    userDataDir,
-    profile.name,
-    (profile.color ?? DEFAULT_OPENCLAW_BROWSER_COLOR).toUpperCase()
-  );
-  const spawnOnce = () => {
-    const args = [
-      `--remote-debugging-port=${profile.cdpPort}`,
-      `--user-data-dir=${userDataDir}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-sync",
-      "--disable-background-networking",
-      "--disable-component-update",
-      "--disable-features=Translate,MediaRouter",
-      "--disable-session-crashed-bubble",
-      "--hide-crash-restore-bubble",
-      "--password-store=basic"
-    ];
-    if (resolved.headless) {
-      args.push("--headless=new", "--disable-gpu");
-    }
-    if (resolved.noSandbox) {
-      args.push("--no-sandbox", "--disable-setuid-sandbox");
-    }
-    if (process.platform === "linux") {
-      args.push("--disable-dev-shm-usage");
-    }
-    args.push("--disable-features=AutomationControlled");
-    if (resolved.extraArgs.length > 0) {
-      args.push(...resolved.extraArgs);
-    }
-    args.push("about:blank");
-    return spawn(exe.path, args, {
-      stdio: "pipe",
-      env: {
-        ...process.env,
-        HOME: os3.homedir()
-      }
-    });
-  };
-  const startedAt = Date.now();
-  const localStatePath = path4.join(userDataDir, "Local State");
-  const preferencesPath = path4.join(userDataDir, "Default", "Preferences");
-  const needsBootstrap = !exists2(localStatePath) || !exists2(preferencesPath);
-  if (needsBootstrap) {
-    const bootstrap = spawnOnce();
-    const deadline = Date.now() + 1e4;
-    while (Date.now() < deadline) {
-      if (exists2(localStatePath) && exists2(preferencesPath)) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    try {
-      bootstrap.kill("SIGTERM");
-    } catch {
-    }
-    const exitDeadline = Date.now() + 5e3;
-    while (Date.now() < exitDeadline) {
-      if (bootstrap.exitCode != null) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
-  if (needsDecorate) {
-    try {
-      decorateOpenClawProfile(userDataDir, {
-        name: profile.name,
-        color: profile.color
-      });
-    } catch (error) {
-      console.warn(`openclaw browser profile decoration failed: ${String(error)}`);
-    }
-  }
-  try {
-    ensureProfileCleanExit(userDataDir);
-  } catch (error) {
-    console.warn(`openclaw browser clean-exit prefs failed: ${String(error)}`);
-  }
-  const proc = spawnOnce();
-  const readyDeadline = Date.now() + 15e3;
-  while (Date.now() < readyDeadline) {
-    if (await isChromeReachable(profile.cdpUrl, 500)) {
-      const wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 500);
-      if (!wsUrl || await canOpenWebSocket(wsUrl, 800)) {
-        break;
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  if (!await isChromeReachable(profile.cdpUrl, 500)) {
-    try {
-      proc.kill("SIGKILL");
-    } catch {
-    }
-    throw new Error(
-      `Failed to start Chrome CDP on port ${profile.cdpPort} for profile "${profile.name}".`
-    );
-  }
-  return {
-    pid: proc.pid ?? -1,
-    exe,
-    userDataDir,
-    cdpPort: profile.cdpPort,
-    startedAt,
-    proc
-  };
-}
-async function stopOpenClawChrome(running, timeoutMs = 2500) {
-  const proc = running.proc;
-  if (proc.killed) {
-    return;
-  }
-  try {
-    proc.kill("SIGTERM");
-  } catch {
-  }
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (!proc.exitCode && proc.killed) {
-      break;
-    }
-    if (!await isChromeReachable(cdpUrlForPort(running.cdpPort), 200)) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  try {
-    proc.kill("SIGKILL");
-  } catch {
-  }
-}
-var init_browser_chrome = __esm({
-  "src/zero-token/providers/browser-chrome.ts"() {
-    init_config_paths();
-    init_browser_cdp();
-    init_chrome_executables();
-    init_chrome_profile_decoration();
-    init_browser_constants();
-  }
-});
-
-// src/zero-token/providers/port-defaults.ts
-function isValidPort(port) {
-  return Number.isFinite(port) && port > 0 && port <= 65535;
-}
-function clampPort(port, fallback) {
-  return isValidPort(port) ? port : fallback;
-}
-function derivePort(base, offset, fallback) {
-  return clampPort(base + offset, fallback);
-}
-function deriveDefaultBrowserControlPort(gatewayPort) {
-  return derivePort(gatewayPort, 2, DEFAULT_BROWSER_CONTROL_PORT);
-}
-function deriveDefaultBrowserCdpPortRange(browserControlPort) {
-  const start = derivePort(browserControlPort, 9, DEFAULT_BROWSER_CDP_PORT_RANGE_START);
-  const end = clampPort(
-    start + (DEFAULT_BROWSER_CDP_PORT_RANGE_END - DEFAULT_BROWSER_CDP_PORT_RANGE_START),
-    DEFAULT_BROWSER_CDP_PORT_RANGE_END
-  );
-  if (end < start) {
-    return { start, end: start };
-  }
-  return { start, end };
-}
-var DEFAULT_BROWSER_CONTROL_PORT, DEFAULT_BROWSER_CDP_PORT_RANGE_START, DEFAULT_BROWSER_CDP_PORT_RANGE_END;
-var init_port_defaults = __esm({
-  "src/zero-token/providers/port-defaults.ts"() {
-    DEFAULT_BROWSER_CONTROL_PORT = 18791;
-    DEFAULT_BROWSER_CDP_PORT_RANGE_START = 18800;
-    DEFAULT_BROWSER_CDP_PORT_RANGE_END = 18899;
-  }
-});
-
-// src/zero-token/providers/browser-profiles.ts
-function getUsedPorts(profiles) {
-  if (!profiles) {
-    return /* @__PURE__ */ new Set();
-  }
-  const used = /* @__PURE__ */ new Set();
-  for (const profile of Object.values(profiles)) {
-    if (typeof profile.cdpPort === "number") {
-      used.add(profile.cdpPort);
-      continue;
-    }
-    const rawUrl = profile.cdpUrl?.trim();
-    if (!rawUrl) {
-      continue;
-    }
-    try {
-      const parsed = new URL(rawUrl);
-      const port = parsed.port && Number.parseInt(parsed.port, 10) > 0 ? Number.parseInt(parsed.port, 10) : parsed.protocol === "https:" ? 443 : 80;
-      if (!Number.isNaN(port) && port > 0 && port <= 65535) {
-        used.add(port);
-      }
-    } catch {
-    }
-  }
-  return used;
-}
-var CDP_PORT_RANGE_START;
-var init_browser_profiles = __esm({
-  "src/zero-token/providers/browser-profiles.ts"() {
-    CDP_PORT_RANGE_START = 18800;
   }
 });
 
@@ -1908,12 +961,6 @@ function resolveBrowserConfig(cfg, rootConfig) {
   const cdpProtocol = cdpInfo.parsed.protocol === "https:" ? "https" : "http";
   const defaultProfile = defaultProfileFromConfig ?? (profiles[DEFAULT_BROWSER_DEFAULT_PROFILE_NAME] ? DEFAULT_BROWSER_DEFAULT_PROFILE_NAME : profiles[DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME] ? DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME : "chrome");
   const extraArgs = Array.isArray(cfg?.extraArgs) ? cfg.extraArgs.filter((arg) => typeof arg === "string" && arg.trim().length > 0) : [];
-  if (!extraArgs.some((a) => a.startsWith("--window-size"))) {
-    extraArgs.push("--window-size=1280,900");
-  }
-  if (!extraArgs.some((a) => a === "--start-maximized")) {
-    extraArgs.push("--start-maximized");
-  }
   return {
     enabled,
     evaluateEnabled,
@@ -1980,7 +1027,7 @@ var init_browser_config = __esm({
 });
 
 // src/zero-token/providers/browser-runtime.ts
-import fs5 from "node:fs";
+import fs2 from "node:fs";
 import JSON5 from "json5";
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -1991,7 +1038,7 @@ function formatRuntimeError(error) {
 function loadZeroTokenBrowserRootConfig() {
   const configPath = resolveConfigPathCandidate();
   try {
-    const raw = fs5.readFileSync(configPath, "utf8");
+    const raw = fs2.readFileSync(configPath, "utf8");
     const parsed = JSON5.parse(raw);
     if (!isRecord(parsed)) {
       throw new Error("Config file must contain an object.");
@@ -2028,95 +1075,80 @@ var init_browser_runtime = __esm({
 // src/zero-token/providers/shared-browser.ts
 import { chromium } from "playwright-core";
 async function getSharedBrowser(providerLabel, targetUrl) {
-  const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
-  if (browserConfig.attachOnly) {
-    console.log(`[${providerLabel}] Connecting to existing Chrome at ${profile.cdpUrl}`);
-    let wsUrl = null;
-    for (let i = 0; i < 10; i++) {
-      wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 2e3);
-      if (wsUrl) break;
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    if (!wsUrl) {
-      throw new Error(
-        `Failed to connect to Chrome at ${profile.cdpUrl}. Make sure Chrome is running in debug mode`
-      );
-    }
-    const browser = await chromium.connectOverCDP(wsUrl, {
-      headers: getHeadersWithAuth(wsUrl)
-    });
-    const context2 = browser.contexts()[0];
-    const domain = new URL(targetUrl).hostname;
-    const pages = context2.pages();
-    let page2 = pages.find((p) => {
-      try {
-        return new URL(p.url()).hostname.includes(domain);
-      } catch {
-        return false;
-      }
-    });
-    if (page2) {
-      console.log(`[${providerLabel}] Found existing page`);
-      return { context: context2, page: page2, isNew: false };
-    }
-    console.log(`[${providerLabel}] Creating new page`);
-    page2 = await context2.newPage();
-    await page2.goto(targetUrl, { waitUntil: "domcontentloaded" });
-    return { context: context2, page: page2, isNew: true };
+  if (sharedBrowser && !sharedBrowser.isConnected()) {
+    console.log(`[${providerLabel}] API Chrome connection lost, resetting...`);
+    sharedBrowser = null;
+    sharedContext = null;
   }
-  if (!sharedRunning || !sharedBrowser) {
-    console.log(`[${providerLabel}] Launching shared Chrome...`);
-    const visibleConfig = {
-      ...browserConfig,
+  if (!sharedBrowser) {
+    const { browserConfig } = resolveZeroTokenBrowserRuntime();
+    const executablePath = browserConfig.executablePath;
+    console.log(`[${providerLabel}] Launching hidden API Chrome...`);
+    const launchArgs = [
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-background-networking",
+      "--disable-sync",
+      "--disable-translate",
+      "--hide-scrollbars",
+      "--mute-audio",
+      "--window-position=-32000,-32000",
+      "--window-size=1,1"
+    ];
+    sharedBrowser = await chromium.launch({
+      executablePath: executablePath || void 0,
       headless: false,
-      extraArgs: [
-        ...(browserConfig.extraArgs || []).filter(
-          (a) => !a.startsWith("--window-position") && !a.startsWith("--window-size")
-        ),
-        "--start-maximized"
-      ]
-    };
-    sharedRunning = await launchOpenClawChrome(visibleConfig, profile);
-    const cdpUrl = `http://127.0.0.1:${sharedRunning.cdpPort}`;
-    let wsUrl = null;
-    for (let i = 0; i < 10; i++) {
-      wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
-      if (wsUrl) break;
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    if (!wsUrl) {
-      throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl}`);
-    }
-    sharedBrowser = await chromium.connectOverCDP(wsUrl, {
-      headers: getHeadersWithAuth(wsUrl)
+      args: launchArgs
     });
-    console.log(`[${providerLabel}] Shared Chrome launched on port ${sharedRunning.cdpPort}`);
+    sharedBrowser.on("disconnected", () => {
+      console.log(`[SharedBrowser] API Chrome disconnected, resetting`);
+      sharedBrowser = null;
+      sharedContext = null;
+      sharedRefCount = 0;
+    });
+    sharedContext = sharedBrowser.contexts()[0] ?? await sharedBrowser.newContext();
+    console.log(`[${providerLabel}] Hidden API Chrome launched`);
   } else {
-    console.log(`[${providerLabel}] Reusing shared Chrome on port ${sharedRunning.cdpPort}`);
+    console.log(`[${providerLabel}] Reusing hidden API Chrome`);
+  }
+  if (!sharedContext) {
+    sharedContext = await sharedBrowser.newContext();
   }
   sharedRefCount++;
-  const context = sharedBrowser.contexts()[0];
-  const page = context.pages().find((p) => p.url() === "about:blank") || await context.newPage();
+  const targetDomain = new URL(targetUrl).hostname;
+  const existingPage = sharedContext.pages().find((p) => {
+    try {
+      return new URL(p.url()).hostname.includes(targetDomain);
+    } catch {
+      return false;
+    }
+  });
+  if (existingPage) {
+    console.log(`[${providerLabel}] Reusing existing page for ${targetDomain}`);
+    return { context: sharedContext, page: existingPage, isNew: false };
+  }
+  const page = sharedContext.pages().find((p) => p.url() === "about:blank") || await sharedContext.newPage();
   await page.goto(targetUrl, { waitUntil: "domcontentloaded" });
-  return { context, page, isNew: true };
+  return { context: sharedContext, page, isNew: true };
 }
 async function releaseSharedBrowser() {
   sharedRefCount = Math.max(0, sharedRefCount - 1);
-  if (sharedRefCount === 0 && sharedRunning) {
-    console.log(`[SharedBrowser] All providers released, stopping Chrome`);
-    await stopOpenClawChrome(sharedRunning);
-    sharedRunning = null;
+  if (sharedRefCount === 0 && sharedBrowser) {
+    console.log(`[SharedBrowser] All providers released, closing API Chrome`);
+    try {
+      await sharedBrowser.close();
+    } catch {
+    }
     sharedBrowser = null;
+    sharedContext = null;
   }
 }
-var sharedRunning, sharedBrowser, sharedRefCount;
+var sharedBrowser, sharedContext, sharedRefCount;
 var init_shared_browser = __esm({
   "src/zero-token/providers/shared-browser.ts"() {
-    init_browser_cdp();
-    init_browser_chrome();
     init_browser_runtime();
-    sharedRunning = null;
     sharedBrowser = null;
+    sharedContext = null;
     sharedRefCount = 0;
   }
 });
@@ -2497,10 +1529,6 @@ var QWEN_CN_WEB_BASE_URL = "https://chat2.qianwen.com";
 var QWEN_CN_WEB_DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 var QWEN_CN_WEB_DEFAULT_CONTEXT_WINDOW = 128e3;
 var QWEN_CN_WEB_DEFAULT_MAX_TOKENS = 4096;
-var XIAOMIMO_WEB_BASE_URL = "https://aistudio.xiaomimimo.com";
-var XIAOMIMO_WEB_DEFAULT_CONTEXT_WINDOW = 128e3;
-var XIAOMIMO_WEB_DEFAULT_MAX_TOKENS = 4096;
-var XIAOMIMO_WEB_DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 async function discoverDeepseekWebModels(_params) {
   return [
     {
@@ -2634,6 +1662,15 @@ async function buildQwenWebProvider(_params) {
     baseUrl: QWEN_WEB_BASE_URL,
     api: "openai-completions",
     models: [
+      {
+        id: "qwen3.6-plus",
+        name: "Qwen 3.6 Plus",
+        reasoning: false,
+        input: ["text"],
+        cost: QWEN_WEB_DEFAULT_COST,
+        contextWindow: QWEN_WEB_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: QWEN_WEB_DEFAULT_MAX_TOKENS
+      },
       {
         id: "qwen3.5-plus",
         name: "Qwen 3.5 Plus",
@@ -2819,29 +1856,947 @@ async function buildPerplexityWebProvider(_params) {
     ]
   };
 }
-function buildXiaomiMimoWebProvider(_params) {
-  return {
-    baseUrl: XIAOMIMO_WEB_BASE_URL,
-    api: "openai-completions",
-    models: [
-      {
-        id: "xiaomimo-chat",
-        name: "MiMo Chat",
-        reasoning: false,
-        input: ["text"],
-        cost: XIAOMIMO_WEB_DEFAULT_COST,
-        contextWindow: XIAOMIMO_WEB_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: XIAOMIMO_WEB_DEFAULT_MAX_TOKENS
-      }
-    ]
-  };
-}
 
 // src/zero-token/providers/chatgpt-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium2 } from "playwright-core";
+
+// src/zero-token/providers/browser-chrome.ts
+init_config_paths();
+init_browser_cdp();
+import { execSync, spawn } from "node:child_process";
+import fs5 from "node:fs";
+import net from "node:net";
+import os3 from "node:os";
+import path4 from "node:path";
+import WebSocket from "ws";
+
+// src/zero-token/providers/chrome.executables.ts
+import { execFileSync } from "node:child_process";
+import fs3 from "node:fs";
+import os2 from "node:os";
+import path2 from "node:path";
+var CHROMIUM_BUNDLE_IDS = /* @__PURE__ */ new Set([
+  "com.google.Chrome",
+  "com.google.Chrome.beta",
+  "com.google.Chrome.canary",
+  "com.google.Chrome.dev",
+  "com.brave.Browser",
+  "com.brave.Browser.beta",
+  "com.brave.Browser.nightly",
+  "com.microsoft.Edge",
+  "com.microsoft.EdgeBeta",
+  "com.microsoft.EdgeDev",
+  "com.microsoft.EdgeCanary",
+  "org.chromium.Chromium",
+  "com.vivaldi.Vivaldi",
+  "com.operasoftware.Opera",
+  "com.operasoftware.OperaGX",
+  "com.yandex.desktop.yandex-browser",
+  "company.thebrowser.Browser"
+  // Arc
+]);
+var CHROMIUM_DESKTOP_IDS = /* @__PURE__ */ new Set([
+  "google-chrome.desktop",
+  "google-chrome-beta.desktop",
+  "google-chrome-unstable.desktop",
+  "brave-browser.desktop",
+  "microsoft-edge.desktop",
+  "microsoft-edge-beta.desktop",
+  "microsoft-edge-dev.desktop",
+  "microsoft-edge-canary.desktop",
+  "chromium.desktop",
+  "chromium-browser.desktop",
+  "vivaldi.desktop",
+  "vivaldi-stable.desktop",
+  "opera.desktop",
+  "opera-gx.desktop",
+  "yandex-browser.desktop",
+  "org.chromium.Chromium.desktop"
+]);
+var CHROMIUM_EXE_NAMES = /* @__PURE__ */ new Set([
+  "chrome.exe",
+  "msedge.exe",
+  "brave.exe",
+  "brave-browser.exe",
+  "chromium.exe",
+  "vivaldi.exe",
+  "opera.exe",
+  "launcher.exe",
+  "yandex.exe",
+  "yandexbrowser.exe",
+  // mac/linux names
+  "google chrome",
+  "google chrome canary",
+  "brave browser",
+  "microsoft edge",
+  "chromium",
+  "chrome",
+  "brave",
+  "msedge",
+  "brave-browser",
+  "google-chrome",
+  "google-chrome-stable",
+  "google-chrome-beta",
+  "google-chrome-unstable",
+  "microsoft-edge",
+  "microsoft-edge-beta",
+  "microsoft-edge-dev",
+  "microsoft-edge-canary",
+  "chromium-browser",
+  "vivaldi",
+  "vivaldi-stable",
+  "opera",
+  "opera-stable",
+  "opera-gx",
+  "yandex-browser"
+]);
+function exists(filePath) {
+  try {
+    return fs3.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+function execText(command, args, timeoutMs = 1200, maxBuffer = 1024 * 1024) {
+  try {
+    const output = execFileSync(command, args, {
+      timeout: timeoutMs,
+      encoding: "utf8",
+      maxBuffer
+    });
+    return String(output ?? "").trim() || null;
+  } catch {
+    return null;
+  }
+}
+function inferKindFromIdentifier(identifier) {
+  const id = identifier.toLowerCase();
+  if (id.includes("brave")) {
+    return "brave";
+  }
+  if (id.includes("edge")) {
+    return "edge";
+  }
+  if (id.includes("chromium")) {
+    return "chromium";
+  }
+  if (id.includes("canary")) {
+    return "canary";
+  }
+  if (id.includes("opera") || id.includes("vivaldi") || id.includes("yandex") || id.includes("thebrowser")) {
+    return "chromium";
+  }
+  return "chrome";
+}
+function inferKindFromExecutableName(name) {
+  const lower = name.toLowerCase();
+  if (lower.includes("brave")) {
+    return "brave";
+  }
+  if (lower.includes("edge") || lower.includes("msedge")) {
+    return "edge";
+  }
+  if (lower.includes("chromium")) {
+    return "chromium";
+  }
+  if (lower.includes("canary") || lower.includes("sxs")) {
+    return "canary";
+  }
+  if (lower.includes("opera") || lower.includes("vivaldi") || lower.includes("yandex")) {
+    return "chromium";
+  }
+  return "chrome";
+}
+function detectDefaultChromiumExecutable(platform) {
+  if (platform === "darwin") {
+    return detectDefaultChromiumExecutableMac();
+  }
+  if (platform === "linux") {
+    return detectDefaultChromiumExecutableLinux();
+  }
+  if (platform === "win32") {
+    return detectDefaultChromiumExecutableWindows();
+  }
+  return null;
+}
+function detectDefaultChromiumExecutableMac() {
+  const bundleId = detectDefaultBrowserBundleIdMac();
+  if (!bundleId || !CHROMIUM_BUNDLE_IDS.has(bundleId)) {
+    return null;
+  }
+  const appPathRaw = execText("/usr/bin/osascript", [
+    "-e",
+    `POSIX path of (path to application id "${bundleId}")`
+  ]);
+  if (!appPathRaw) {
+    return null;
+  }
+  const appPath = appPathRaw.trim().replace(/\/$/, "");
+  const exeName = execText("/usr/bin/defaults", [
+    "read",
+    path2.join(appPath, "Contents", "Info"),
+    "CFBundleExecutable"
+  ]);
+  if (!exeName) {
+    return null;
+  }
+  const exePath = path2.join(appPath, "Contents", "MacOS", exeName.trim());
+  if (!exists(exePath)) {
+    return null;
+  }
+  return { kind: inferKindFromIdentifier(bundleId), path: exePath };
+}
+function detectDefaultBrowserBundleIdMac() {
+  const plistPath = path2.join(
+    os2.homedir(),
+    "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+  );
+  if (!exists(plistPath)) {
+    return null;
+  }
+  const handlersRaw = execText(
+    "/usr/bin/plutil",
+    ["-extract", "LSHandlers", "json", "-o", "-", "--", plistPath],
+    2e3,
+    5 * 1024 * 1024
+  );
+  if (!handlersRaw) {
+    return null;
+  }
+  let handlers;
+  try {
+    handlers = JSON.parse(handlersRaw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(handlers)) {
+    return null;
+  }
+  const resolveScheme = (scheme) => {
+    let candidate = null;
+    for (const entry of handlers) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const record = entry;
+      if (record.LSHandlerURLScheme !== scheme) {
+        continue;
+      }
+      const role = typeof record.LSHandlerRoleAll === "string" && record.LSHandlerRoleAll || typeof record.LSHandlerRoleViewer === "string" && record.LSHandlerRoleViewer || null;
+      if (role) {
+        candidate = role;
+      }
+    }
+    return candidate;
+  };
+  return resolveScheme("http") ?? resolveScheme("https");
+}
+function detectDefaultChromiumExecutableLinux() {
+  const desktopId = execText("xdg-settings", ["get", "default-web-browser"]) || execText("xdg-mime", ["query", "default", "x-scheme-handler/http"]);
+  if (!desktopId) {
+    return null;
+  }
+  const trimmed = desktopId.trim();
+  if (!CHROMIUM_DESKTOP_IDS.has(trimmed)) {
+    return null;
+  }
+  const desktopPath = findDesktopFilePath(trimmed);
+  if (!desktopPath) {
+    return null;
+  }
+  const execLine = readDesktopExecLine(desktopPath);
+  if (!execLine) {
+    return null;
+  }
+  const command = extractExecutableFromExecLine(execLine);
+  if (!command) {
+    return null;
+  }
+  const resolved = resolveLinuxExecutablePath(command);
+  if (!resolved) {
+    return null;
+  }
+  const exeName = path2.posix.basename(resolved).toLowerCase();
+  if (!CHROMIUM_EXE_NAMES.has(exeName)) {
+    return null;
+  }
+  return { kind: inferKindFromExecutableName(exeName), path: resolved };
+}
+function detectDefaultChromiumExecutableWindows() {
+  const progId = readWindowsProgId();
+  const command = (progId ? readWindowsCommandForProgId(progId) : null) || readWindowsCommandForProgId("http");
+  if (!command) {
+    return null;
+  }
+  const expanded = expandWindowsEnvVars(command);
+  const exePath = extractWindowsExecutablePath(expanded);
+  if (!exePath) {
+    return null;
+  }
+  if (!exists(exePath)) {
+    return null;
+  }
+  const exeName = path2.win32.basename(exePath).toLowerCase();
+  if (!CHROMIUM_EXE_NAMES.has(exeName)) {
+    return null;
+  }
+  return { kind: inferKindFromExecutableName(exeName), path: exePath };
+}
+function findDesktopFilePath(desktopId) {
+  const candidates = [
+    path2.join(os2.homedir(), ".local", "share", "applications", desktopId),
+    path2.join("/usr/local/share/applications", desktopId),
+    path2.join("/usr/share/applications", desktopId),
+    path2.join("/var/lib/snapd/desktop/applications", desktopId)
+  ];
+  for (const candidate of candidates) {
+    if (exists(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+function readDesktopExecLine(desktopPath) {
+  try {
+    const raw = fs3.readFileSync(desktopPath, "utf8");
+    const lines = raw.split(/\r?\n/);
+    for (const line of lines) {
+      if (line.startsWith("Exec=")) {
+        return line.slice("Exec=".length).trim();
+      }
+    }
+  } catch {
+  }
+  return null;
+}
+function extractExecutableFromExecLine(execLine) {
+  const tokens = splitExecLine(execLine);
+  for (const token of tokens) {
+    if (!token) {
+      continue;
+    }
+    if (token === "env") {
+      continue;
+    }
+    if (token.includes("=") && !token.startsWith("/") && !token.includes("\\")) {
+      continue;
+    }
+    return token.replace(/^["']|["']$/g, "");
+  }
+  return null;
+}
+function splitExecLine(line) {
+  const tokens = [];
+  let current = "";
+  let inQuotes = false;
+  let quoteChar = "";
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if ((ch === '"' || ch === "'") && (!inQuotes || ch === quoteChar)) {
+      if (inQuotes) {
+        inQuotes = false;
+        quoteChar = "";
+      } else {
+        inQuotes = true;
+        quoteChar = ch;
+      }
+      continue;
+    }
+    if (!inQuotes && /\s/.test(ch)) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += ch;
+  }
+  if (current) {
+    tokens.push(current);
+  }
+  return tokens;
+}
+function resolveLinuxExecutablePath(command) {
+  const cleaned = command.trim().replace(/%[a-zA-Z]/g, "");
+  if (!cleaned) {
+    return null;
+  }
+  if (cleaned.startsWith("/")) {
+    return cleaned;
+  }
+  const resolved = execText("which", [cleaned], 800);
+  return resolved ? resolved.trim() : null;
+}
+function readWindowsProgId() {
+  const output = execText("reg", [
+    "query",
+    "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\http\\UserChoice",
+    "/v",
+    "ProgId"
+  ]);
+  if (!output) {
+    return null;
+  }
+  const match = output.match(/ProgId\s+REG_\w+\s+(.+)$/im);
+  return match?.[1]?.trim() || null;
+}
+function readWindowsCommandForProgId(progId) {
+  const key = progId === "http" ? "HKCR\\http\\shell\\open\\command" : `HKCR\\${progId}\\shell\\open\\command`;
+  const output = execText("reg", ["query", key, "/ve"]);
+  if (!output) {
+    return null;
+  }
+  const match = output.match(/REG_\w+\s+(.+)$/im);
+  return match?.[1]?.trim() || null;
+}
+function expandWindowsEnvVars(value) {
+  return value.replace(/%([^%]+)%/g, (_match, name) => {
+    const key = String(name ?? "").trim();
+    return key ? process.env[key] ?? `%${key}%` : _match;
+  });
+}
+function extractWindowsExecutablePath(command) {
+  const quoted = command.match(/"([^"]+\\.exe)"/i);
+  if (quoted?.[1]) {
+    return quoted[1];
+  }
+  const unquoted = command.match(/([^\\s]+\\.exe)/i);
+  if (unquoted?.[1]) {
+    return unquoted[1];
+  }
+  return null;
+}
+function findFirstExecutable(candidates) {
+  for (const candidate of candidates) {
+    if (exists(candidate.path)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+function findChromeExecutableMac() {
+  const candidates = [
+    {
+      kind: "chrome",
+      path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    },
+    {
+      kind: "chrome",
+      path: path2.join(os2.homedir(), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    },
+    {
+      kind: "brave",
+      path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+    },
+    {
+      kind: "brave",
+      path: path2.join(os2.homedir(), "Applications/Brave Browser.app/Contents/MacOS/Brave Browser")
+    },
+    {
+      kind: "edge",
+      path: "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+    },
+    {
+      kind: "edge",
+      path: path2.join(
+        os2.homedir(),
+        "Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+      )
+    },
+    {
+      kind: "chromium",
+      path: "/Applications/Chromium.app/Contents/MacOS/Chromium"
+    },
+    {
+      kind: "chromium",
+      path: path2.join(os2.homedir(), "Applications/Chromium.app/Contents/MacOS/Chromium")
+    },
+    {
+      kind: "canary",
+      path: "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"
+    },
+    {
+      kind: "canary",
+      path: path2.join(
+        os2.homedir(),
+        "Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"
+      )
+    }
+  ];
+  return findFirstExecutable(candidates);
+}
+function findChromeExecutableLinux() {
+  const candidates = [
+    { kind: "chrome", path: "/usr/bin/google-chrome" },
+    { kind: "chrome", path: "/usr/bin/google-chrome-stable" },
+    { kind: "chrome", path: "/usr/bin/chrome" },
+    { kind: "brave", path: "/usr/bin/brave-browser" },
+    { kind: "brave", path: "/usr/bin/brave-browser-stable" },
+    { kind: "brave", path: "/usr/bin/brave" },
+    { kind: "brave", path: "/snap/bin/brave" },
+    { kind: "edge", path: "/usr/bin/microsoft-edge" },
+    { kind: "edge", path: "/usr/bin/microsoft-edge-stable" },
+    { kind: "chromium", path: "/usr/bin/chromium" },
+    { kind: "chromium", path: "/usr/bin/chromium-browser" },
+    { kind: "chromium", path: "/snap/bin/chromium" }
+  ];
+  return findFirstExecutable(candidates);
+}
+function findChromeExecutableWindows() {
+  const localAppData = process.env.LOCALAPPDATA ?? "";
+  const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+  const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+  const joinWin = path2.win32.join;
+  const candidates = [];
+  if (localAppData) {
+    candidates.push({
+      kind: "chrome",
+      path: joinWin(localAppData, "Google", "Chrome", "Application", "chrome.exe")
+    });
+    candidates.push({
+      kind: "brave",
+      path: joinWin(localAppData, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+    });
+    candidates.push({
+      kind: "edge",
+      path: joinWin(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
+    });
+    candidates.push({
+      kind: "chromium",
+      path: joinWin(localAppData, "Chromium", "Application", "chrome.exe")
+    });
+    candidates.push({
+      kind: "canary",
+      path: joinWin(localAppData, "Google", "Chrome SxS", "Application", "chrome.exe")
+    });
+  }
+  candidates.push({
+    kind: "chrome",
+    path: joinWin(programFiles, "Google", "Chrome", "Application", "chrome.exe")
+  });
+  candidates.push({
+    kind: "chrome",
+    path: joinWin(programFilesX86, "Google", "Chrome", "Application", "chrome.exe")
+  });
+  candidates.push({
+    kind: "brave",
+    path: joinWin(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+  });
+  candidates.push({
+    kind: "brave",
+    path: joinWin(programFilesX86, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+  });
+  candidates.push({
+    kind: "edge",
+    path: joinWin(programFiles, "Microsoft", "Edge", "Application", "msedge.exe")
+  });
+  candidates.push({
+    kind: "edge",
+    path: joinWin(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe")
+  });
+  return findFirstExecutable(candidates);
+}
+function resolveBrowserExecutableForPlatform(resolved, platform) {
+  if (resolved.executablePath) {
+    if (!exists(resolved.executablePath)) {
+      throw new Error(`browser.executablePath not found: ${resolved.executablePath}`);
+    }
+    return { kind: "custom", path: resolved.executablePath };
+  }
+  const detected = detectDefaultChromiumExecutable(platform);
+  if (detected) {
+    return detected;
+  }
+  if (platform === "darwin") {
+    return findChromeExecutableMac();
+  }
+  if (platform === "linux") {
+    return findChromeExecutableLinux();
+  }
+  if (platform === "win32") {
+    return findChromeExecutableWindows();
+  }
+  return null;
+}
+
+// src/zero-token/providers/chrome.profile-decoration.ts
+init_browser_constants();
+import fs4 from "node:fs";
+import path3 from "node:path";
+function decoratedMarkerPath(userDataDir) {
+  return path3.join(userDataDir, ".openclaw-profile-decorated");
+}
+function safeReadJson(filePath) {
+  try {
+    if (!fs4.existsSync(filePath)) {
+      return null;
+    }
+    const raw = fs4.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function safeWriteJson(filePath, data) {
+  fs4.mkdirSync(path3.dirname(filePath), { recursive: true });
+  fs4.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+function setDeep(obj, keys, value) {
+  let node = obj;
+  for (const key of keys.slice(0, -1)) {
+    const next = node[key];
+    if (typeof next !== "object" || next === null || Array.isArray(next)) {
+      node[key] = {};
+    }
+    node = node[key];
+  }
+  node[keys[keys.length - 1] ?? ""] = value;
+}
+function parseHexRgbToSignedArgbInt(hex) {
+  const cleaned = hex.trim().replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(cleaned)) {
+    return null;
+  }
+  const rgb = Number.parseInt(cleaned, 16);
+  const argbUnsigned = 255 << 24 | rgb;
+  return argbUnsigned > 2147483647 ? argbUnsigned - 4294967296 : argbUnsigned;
+}
+function isProfileDecorated(userDataDir, desiredName, desiredColorHex) {
+  const desiredColorInt = parseHexRgbToSignedArgbInt(desiredColorHex);
+  const localStatePath = path3.join(userDataDir, "Local State");
+  const preferencesPath = path3.join(userDataDir, "Default", "Preferences");
+  const localState = safeReadJson(localStatePath);
+  const profile = localState?.profile;
+  const infoCache = typeof profile === "object" && profile !== null && !Array.isArray(profile) ? profile.info_cache : null;
+  const info = typeof infoCache === "object" && infoCache !== null && !Array.isArray(infoCache) && typeof infoCache.Default === "object" && infoCache.Default !== null && !Array.isArray(infoCache.Default) ? infoCache.Default : null;
+  const prefs = safeReadJson(preferencesPath);
+  const browserTheme = (() => {
+    const browser = prefs?.browser;
+    const theme = typeof browser === "object" && browser !== null && !Array.isArray(browser) ? browser.theme : null;
+    return typeof theme === "object" && theme !== null && !Array.isArray(theme) ? theme : null;
+  })();
+  const autogeneratedTheme = (() => {
+    const autogenerated = prefs?.autogenerated;
+    const theme = typeof autogenerated === "object" && autogenerated !== null && !Array.isArray(autogenerated) ? autogenerated.theme : null;
+    return typeof theme === "object" && theme !== null && !Array.isArray(theme) ? theme : null;
+  })();
+  const nameOk = typeof info?.name === "string" ? info.name === desiredName : true;
+  if (desiredColorInt == null) {
+    return nameOk;
+  }
+  const localSeedOk = typeof info?.profile_color_seed === "number" ? info.profile_color_seed === desiredColorInt : false;
+  const prefOk = typeof browserTheme?.user_color2 === "number" && browserTheme.user_color2 === desiredColorInt || typeof autogeneratedTheme?.color === "number" && autogeneratedTheme.color === desiredColorInt;
+  return nameOk && localSeedOk && prefOk;
+}
+function decorateOpenClawProfile(userDataDir, opts) {
+  const desiredName = opts?.name ?? DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME;
+  const desiredColor = (opts?.color ?? DEFAULT_OPENCLAW_BROWSER_COLOR).toUpperCase();
+  const desiredColorInt = parseHexRgbToSignedArgbInt(desiredColor);
+  const localStatePath = path3.join(userDataDir, "Local State");
+  const preferencesPath = path3.join(userDataDir, "Default", "Preferences");
+  const localState = safeReadJson(localStatePath) ?? {};
+  setDeep(localState, ["profile", "info_cache", "Default", "name"], desiredName);
+  setDeep(localState, ["profile", "info_cache", "Default", "shortcut_name"], desiredName);
+  setDeep(localState, ["profile", "info_cache", "Default", "user_name"], desiredName);
+  setDeep(localState, ["profile", "info_cache", "Default", "profile_color"], desiredColor);
+  setDeep(localState, ["profile", "info_cache", "Default", "user_color"], desiredColor);
+  if (desiredColorInt != null) {
+    setDeep(
+      localState,
+      ["profile", "info_cache", "Default", "profile_color_seed"],
+      desiredColorInt
+    );
+    setDeep(
+      localState,
+      ["profile", "info_cache", "Default", "profile_highlight_color"],
+      desiredColorInt
+    );
+    setDeep(
+      localState,
+      ["profile", "info_cache", "Default", "default_avatar_fill_color"],
+      desiredColorInt
+    );
+    setDeep(
+      localState,
+      ["profile", "info_cache", "Default", "default_avatar_stroke_color"],
+      desiredColorInt
+    );
+  }
+  safeWriteJson(localStatePath, localState);
+  const prefs = safeReadJson(preferencesPath) ?? {};
+  setDeep(prefs, ["profile", "name"], desiredName);
+  setDeep(prefs, ["profile", "profile_color"], desiredColor);
+  setDeep(prefs, ["profile", "user_color"], desiredColor);
+  if (desiredColorInt != null) {
+    setDeep(prefs, ["autogenerated", "theme", "color"], desiredColorInt);
+    setDeep(prefs, ["browser", "theme", "user_color2"], desiredColorInt);
+  }
+  safeWriteJson(preferencesPath, prefs);
+  try {
+    fs4.writeFileSync(decoratedMarkerPath(userDataDir), `${Date.now()}
+`, "utf-8");
+  } catch {
+  }
+}
+function ensureProfileCleanExit(userDataDir) {
+  const preferencesPath = path3.join(userDataDir, "Default", "Preferences");
+  const prefs = safeReadJson(preferencesPath) ?? {};
+  setDeep(prefs, ["exit_type"], "Normal");
+  setDeep(prefs, ["exited_cleanly"], true);
+  safeWriteJson(preferencesPath, prefs);
+}
+
+// src/zero-token/providers/browser-chrome.ts
+init_browser_constants();
+function exists2(filePath) {
+  try {
+    return fs5.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+async function ensurePortAvailable(port, host = "127.0.0.1") {
+  await new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (error) => {
+      server.close();
+      reject(error);
+    });
+    server.listen(port, host, () => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+}
+function resolveBrowserExecutable(resolved) {
+  return resolveBrowserExecutableForPlatform(resolved, process.platform);
+}
+function resolveOpenClawUserDataDir(profileName = DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME) {
+  return path4.join(resolveStateDir(), "browser", profileName, "user-data");
+}
+function cdpUrlForPort(cdpPort) {
+  return `http://127.0.0.1:${cdpPort}`;
+}
+async function fetchChromeVersion(cdpUrl, timeoutMs = 500) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const versionUrl = appendCdpPath(cdpUrl, "/json/version");
+    const response = await fetch(versionUrl, {
+      signal: ctrl.signal,
+      headers: getHeadersWithAuth(versionUrl)
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json();
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function isChromeReachable(cdpUrl, timeoutMs = 500) {
+  const version = await fetchChromeVersion(cdpUrl, timeoutMs);
+  return Boolean(version);
+}
+async function getChromeWebSocketUrl(cdpUrl, timeoutMs = 500) {
+  const version = await fetchChromeVersion(cdpUrl, timeoutMs);
+  const wsUrl = String(version?.webSocketDebuggerUrl ?? "").trim();
+  if (!wsUrl) {
+    return null;
+  }
+  return normalizeCdpWsUrl(wsUrl, cdpUrl);
+}
+async function canOpenWebSocket(wsUrl, timeoutMs = 800) {
+  return await new Promise((resolve) => {
+    const headers = getHeadersWithAuth(wsUrl);
+    const ws = new WebSocket(wsUrl, {
+      handshakeTimeout: timeoutMs,
+      ...Object.keys(headers).length ? { headers } : {}
+    });
+    const timer = setTimeout(() => {
+      try {
+        ws.terminate();
+      } catch {
+      }
+      resolve(false);
+    }, Math.max(50, timeoutMs + 25));
+    ws.once("open", () => {
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {
+      }
+      resolve(true);
+    });
+    ws.once("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
+}
+async function launchOpenClawChrome(resolved, profile) {
+  if (!profile.cdpIsLoopback) {
+    throw new Error(`Profile "${profile.name}" is remote; cannot launch local Chrome.`);
+  }
+  await ensurePortAvailable(profile.cdpPort);
+  const exe = resolveBrowserExecutable(resolved);
+  if (!exe) {
+    throw new Error(
+      "No supported browser found (Chrome/Brave/Edge/Chromium on macOS, Linux, or Windows)."
+    );
+  }
+  const userDataDir = resolveOpenClawUserDataDir(profile.name);
+  fs5.mkdirSync(userDataDir, { recursive: true });
+  const needsDecorate = !isProfileDecorated(
+    userDataDir,
+    profile.name,
+    (profile.color ?? DEFAULT_OPENCLAW_BROWSER_COLOR).toUpperCase()
+  );
+  const spawnOnce = () => {
+    const args = [
+      `--remote-debugging-port=${profile.cdpPort}`,
+      `--user-data-dir=${userDataDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-sync",
+      "--disable-background-networking",
+      "--disable-component-update",
+      "--disable-features=Translate,MediaRouter",
+      "--disable-session-crashed-bubble",
+      "--hide-crash-restore-bubble",
+      "--password-store=basic"
+    ];
+    if (resolved.headless) {
+      args.push("--headless=new", "--disable-gpu");
+    }
+    if (resolved.noSandbox) {
+      args.push("--no-sandbox", "--disable-setuid-sandbox");
+    }
+    if (process.platform === "linux") {
+      args.push("--disable-dev-shm-usage");
+    }
+    args.push("--disable-features=AutomationControlled");
+    if (resolved.extraArgs.length > 0) {
+      args.push(...resolved.extraArgs);
+    }
+    args.push("about:blank");
+    return spawn(exe.path, args, {
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        HOME: os3.homedir()
+      }
+    });
+  };
+  const startedAt = Date.now();
+  const localStatePath = path4.join(userDataDir, "Local State");
+  const preferencesPath = path4.join(userDataDir, "Default", "Preferences");
+  const needsBootstrap = !exists2(localStatePath) || !exists2(preferencesPath);
+  if (needsBootstrap) {
+    const bootstrap = spawnOnce();
+    const deadline = Date.now() + 1e4;
+    while (Date.now() < deadline) {
+      if (exists2(localStatePath) && exists2(preferencesPath)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    try {
+      bootstrap.kill("SIGTERM");
+    } catch {
+    }
+    const exitDeadline = Date.now() + 5e3;
+    while (Date.now() < exitDeadline) {
+      if (bootstrap.exitCode != null) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  if (needsDecorate) {
+    try {
+      decorateOpenClawProfile(userDataDir, {
+        name: profile.name,
+        color: profile.color
+      });
+    } catch (error) {
+      console.warn(`openclaw browser profile decoration failed: ${String(error)}`);
+    }
+  }
+  try {
+    ensureProfileCleanExit(userDataDir);
+  } catch (error) {
+    console.warn(`openclaw browser clean-exit prefs failed: ${String(error)}`);
+  }
+  const proc = spawnOnce();
+  const readyDeadline = Date.now() + 15e3;
+  while (Date.now() < readyDeadline) {
+    if (await isChromeReachable(profile.cdpUrl, 500)) {
+      const wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 500);
+      if (!wsUrl || await canOpenWebSocket(wsUrl, 800)) {
+        break;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  if (!await isChromeReachable(profile.cdpUrl, 500)) {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+    }
+    throw new Error(
+      `Failed to start Chrome CDP on port ${profile.cdpPort} for profile "${profile.name}".`
+    );
+  }
+  return {
+    pid: proc.pid ?? -1,
+    exe,
+    userDataDir,
+    cdpPort: profile.cdpPort,
+    startedAt,
+    proc
+  };
+}
+async function stopOpenClawChrome(running, timeoutMs = 2500) {
+  const proc = running.proc;
+  if (proc.killed) {
+    return;
+  }
+  try {
+    proc.kill("SIGTERM");
+  } catch {
+  }
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (!proc.exitCode && proc.killed) {
+      break;
+    }
+    if (!await isChromeReachable(cdpUrlForPort(running.cdpPort), 200)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  try {
+    proc.kill("SIGKILL");
+  } catch {
+  }
+}
+
+// src/zero-token/providers/chatgpt-web-auth.ts
+init_browser_runtime();
 async function loginChatGPTWeb(params) {
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
   let running;
@@ -2977,9 +2932,8 @@ async function loginChatGPTWeb(params) {
 
 // src/zero-token/providers/claude-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium3 } from "playwright-core";
+init_browser_runtime();
 async function loginClaudeWeb(params) {
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
   let running;
@@ -3113,9 +3067,8 @@ async function loginClaudeWeb(params) {
 
 // src/zero-token/providers/deepseek-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium4 } from "playwright-core";
+init_browser_runtime();
 async function loginDeepseekWeb(params) {
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
   let running = null;
@@ -3306,11 +3259,10 @@ async function loginDeepseekWeb(params) {
 
 // src/zero-token/providers/doubao-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import os4 from "node:os";
 import path5 from "node:path";
 import { chromium as chromium5 } from "playwright-core";
+init_browser_runtime();
 var DEFAULT_CDP_PORT = 9222;
 async function loginDoubaoWeb(params) {
   const {
@@ -3447,9 +3399,8 @@ async function loginDoubaoWeb(params) {
 
 // src/zero-token/providers/gemini-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium6 } from "playwright-core";
+init_browser_runtime();
 async function loginGeminiWeb(options = {}) {
   const { onProgress = console.log, headless = false } = options;
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
@@ -3518,9 +3469,8 @@ async function loginGeminiWeb(options = {}) {
 
 // src/zero-token/providers/glm-intl-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium7 } from "playwright-core";
+init_browser_runtime();
 async function loginGlmIntlWeb(options = {}) {
   const { onProgress = console.log } = options;
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
@@ -3614,9 +3564,8 @@ async function loginGlmIntlWeb(options = {}) {
 
 // src/zero-token/providers/grok-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium8 } from "playwright-core";
+init_browser_runtime();
 async function loginGrokWeb(options = {}) {
   const { onProgress = console.log, headless = false } = options;
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
@@ -3681,9 +3630,8 @@ async function loginGrokWeb(options = {}) {
 
 // src/zero-token/providers/kimi-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium9 } from "playwright-core";
+init_browser_runtime();
 async function loginKimiWeb(options = {}) {
   const { onProgress = console.log } = options;
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
@@ -3752,9 +3700,8 @@ async function loginKimiWeb(options = {}) {
 
 // src/zero-token/providers/perplexity-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium10 } from "playwright-core";
+init_browser_runtime();
 async function loginPerplexityWeb(options = {}) {
   const { onProgress = console.log, headless = false } = options;
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
@@ -3896,9 +3843,8 @@ async function loginQwenCNWeb(params) {
 
 // src/zero-token/providers/qwen-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
 import { chromium as chromium12 } from "playwright-core";
+init_browser_runtime();
 async function loginQwenWeb(params) {
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
   let running;
@@ -4034,226 +3980,10 @@ async function loginQwenWeb(params) {
   }
 }
 
-// src/zero-token/providers/xiaomimo-web-auth.ts
-init_browser_cdp();
-init_browser_chrome();
-init_browser_runtime();
-import { chromium as chromium13 } from "playwright-core";
-var XIAOMIMO_BASE_URL = "https://aistudio.xiaomimimo.com";
-var XIAOMIMO_AUTH_URL = "https://aistudio.xiaomimimo.com/#/";
-async function loginXiaomiMimoWeb(params) {
-  const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
-  let running;
-  let didLaunch = false;
-  if (browserConfig.attachOnly) {
-    params.onProgress("Connecting to existing Chrome (attach mode)...");
-    const wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 5e3);
-    if (!wsUrl) {
-      throw new Error(
-        `Failed to connect to Chrome at ${profile.cdpUrl}. Make sure Chrome is running in debug mode (./start-chrome-debug.sh)`
-      );
-    }
-    running = { cdpPort: profile.cdpPort };
-  } else {
-    params.onProgress("Launching browser...");
-    running = await launchOpenClawChrome(browserConfig, profile);
-    didLaunch = true;
-  }
-  try {
-    const cdpUrl = browserConfig.attachOnly ? profile.cdpUrl : `http://127.0.0.1:${running.cdpPort}`;
-    let wsUrl = null;
-    params.onProgress("Waiting for browser debugger...");
-    for (let i = 0; i < 10; i++) {
-      wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
-      if (wsUrl) {
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    if (!wsUrl) {
-      throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl} after retries.`);
-    }
-    params.onProgress("Connecting to browser...");
-    const browser = await chromium13.connectOverCDP(wsUrl, {
-      headers: getHeadersWithAuth(wsUrl),
-      timeout: 6e4
-    });
-    const context = browser.contexts()[0];
-    let page = context.pages()[0];
-    if (!page) {
-      page = await context.newPage();
-    } else {
-      const existingPage = context.pages().find((p) => p.url().includes("xiaomimimo.com"));
-      if (existingPage) {
-        page = existingPage;
-      }
-    }
-    params.onProgress(`Opening ${XIAOMIMO_AUTH_URL}...`);
-    await params.openUrl(XIAOMIMO_AUTH_URL);
-    await page.goto(XIAOMIMO_AUTH_URL, { waitUntil: "domcontentloaded", timeout: 15e3 }).catch(() => {
-    });
-    const userAgent = await page.evaluate(() => navigator.userAgent);
-    params.onProgress("Please login to Xiaomi MiMo in the opened browser window...");
-    params.onProgress("Waiting for authentication token...");
-    return await new Promise((resolve, reject) => {
-      let _capturedCookie;
-      let capturedToken;
-      let resolved = false;
-      let checkInterval;
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          if (checkInterval) {
-            clearInterval(checkInterval);
-          }
-          reject(new Error("Login timed out (5 minutes)."));
-        }
-      }, 3e5);
-      const tryResolve = async () => {
-        if (resolved) {
-          return;
-        }
-        try {
-          const cookies = await context.cookies([
-            XIAOMIMO_BASE_URL,
-            "https://aistudio.xiaomimimo.com"
-          ]);
-          if (cookies.length === 0) {
-            return;
-          }
-          const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-          console.log(
-            `[XiaomiMimo] Found ${cookies.length} cookies: ${cookies.map((c) => c.name).join(", ")}`
-          );
-          const tokenCookie = cookies.find(
-            (c) => c.name.toLowerCase().includes("token") || c.name.toLowerCase().includes("session") || c.name.toLowerCase().includes("auth") || c.name.toLowerCase().includes("user")
-          );
-          if (tokenCookie || capturedToken) {
-            const finalToken = capturedToken || tokenCookie?.value || "";
-            if (finalToken && cookies.length > 1) {
-              resolved = true;
-              clearTimeout(timeout);
-              if (checkInterval) {
-                clearInterval(checkInterval);
-              }
-              console.log(`[XiaomiMimo] Auth token captured!`);
-              resolve({
-                cookie: cookieString,
-                userAgent
-              });
-            }
-          } else {
-            console.log(
-              `[XiaomiMimo] Waiting for token cookie... (${cookies.length} cookies found)`
-            );
-          }
-        } catch (e) {
-          console.error(`[XiaomiMimo] Failed to fetch cookies: ${String(e)}`);
-        }
-      };
-      page.on("request", async (request) => {
-        const url = request.url();
-        if (url.includes("xiaomimimo.com")) {
-          const headers = request.headers();
-          const auth = headers["authorization"] || headers["Authorization"];
-          const cookie = headers["cookie"] || headers["Cookie"];
-          if (auth && auth.startsWith("Bearer ")) {
-            if (!capturedToken) {
-              console.log(`[XiaomiMimo] Captured Bearer token from request header.`);
-              capturedToken = auth.replace("Bearer ", "");
-            }
-            void tryResolve();
-          } else if (cookie) {
-            const tokenMatch = cookie.match(/(?:token|session|auth|user)[^=]*=([^;]+)/i);
-            if (tokenMatch && !capturedToken) {
-              console.log(`[XiaomiMimo] Captured token from cookie header.`);
-              capturedToken = tokenMatch[1];
-              void tryResolve();
-            }
-          }
-        }
-      });
-      page.on("response", async (response) => {
-        const url = response.url();
-        if (url.includes("xiaomimimo.com") && response.ok()) {
-          try {
-            const ct = response.headers()["content-type"] || "";
-            if (ct.includes("application/json")) {
-              const text = await response.text().catch(() => "");
-              if (text) {
-                const tokenMatch = text.match(/(?:token|session|auth|access_token)[^"]*"([^"]+)"/i);
-                if (tokenMatch && !capturedToken) {
-                  console.log(`[XiaomiMimo] Captured token from response body.`);
-                  capturedToken = tokenMatch[1];
-                  void tryResolve();
-                }
-              }
-            }
-          } catch {
-          }
-          void tryResolve();
-        }
-      });
-      page.on("framenavigated", async () => {
-        try {
-          const storageData = await page.evaluate(() => {
-            const data = {};
-            try {
-              for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key) {
-                  const val = localStorage.getItem(key);
-                  if (val) {
-                    data[key] = val;
-                  }
-                }
-              }
-            } catch {
-            }
-            return data;
-          });
-          for (const [key, value] of Object.entries(storageData)) {
-            const k = key.toLowerCase();
-            if (k.includes("token") || k.includes("session") || k.includes("auth") || k.includes("user")) {
-              try {
-                const parsed = JSON.parse(value);
-                const token = parsed?.token || parsed?.access_token || parsed?.data || value;
-                if (typeof token === "string" && token.length > 10 && !capturedToken) {
-                  console.log(`[XiaomiMimo] Captured token from localStorage key: ${key}`);
-                  capturedToken = token;
-                  void tryResolve();
-                }
-              } catch {
-                if (value.length > 10 && !capturedToken) {
-                  console.log(`[XiaomiMimo] Captured token from localStorage key: ${key}`);
-                  capturedToken = value;
-                  void tryResolve();
-                }
-              }
-            }
-          }
-        } catch {
-        }
-      });
-      page.on("close", () => {
-        if (checkInterval) {
-          clearInterval(checkInterval);
-        }
-        reject(new Error("Browser window closed before login was captured."));
-      });
-      checkInterval = setInterval(tryResolve, 2e3);
-    });
-  } finally {
-    if (didLaunch && running && "proc" in running) {
-      await stopOpenClawChrome(running);
-    }
-  }
-}
-
 // src/zero-token/providers/glm-web-auth.ts
 init_browser_cdp();
-init_browser_chrome();
+import { chromium as chromium13 } from "playwright-core";
 init_browser_runtime();
-import { chromium as chromium14 } from "playwright-core";
 async function loginZWeb(options = {}) {
   const { onProgress = console.log } = options;
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
@@ -4288,7 +4018,7 @@ async function loginZWeb(options = {}) {
       throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl} after retries.`);
     }
     onProgress("Connecting to browser...");
-    const browser = await chromium14.connectOverCDP(wsUrl, {
+    const browser = await chromium13.connectOverCDP(wsUrl, {
       headers: getHeadersWithAuth(wsUrl)
     });
     const context = browser.contexts()[0];
@@ -10369,88 +10099,101 @@ var KimiWebClientBrowser = class {
     if (!kimiAuth) {
       throw new Error("Kimi: \u672A\u627E\u5230 kimi-auth Cookie\uFF0C\u8BF7\u5728 Chrome \u4E2D\u767B\u5F55 www.kimi.com \u540E\u518D\u8BD5");
     }
+    const scenario = params.model.includes("search") ? "SCENARIO_SEARCH" : params.model.includes("research") ? "SCENARIO_RESEARCH" : params.model.includes("k1") ? "SCENARIO_K1" : "SCENARIO_K2";
     const result = await page.evaluate(
       async ({
         baseUrl,
         message,
         kimiAuthToken,
-        scenario
+        scenario: scenario2,
+        conversationId
       }) => {
-        const req = {
-          scenario,
-          message: {
-            role: "user",
-            blocks: [{ message_id: "", text: { content: message } }],
-            scenario
-          },
-          options: { thinking: false }
+        const headers = {
+          "Content-Type": "application/json",
+          Accept: "*/*",
+          Origin: baseUrl,
+          Referer: `${baseUrl}/`,
+          "X-Language": "zh-CN",
+          "X-Msh-Platform": "web",
+          Authorization: `Bearer ${kimiAuthToken}`
         };
-        const enc = new TextEncoder().encode(JSON.stringify(req));
-        const buf = new ArrayBuffer(5 + enc.byteLength);
-        const dv = new DataView(buf);
-        dv.setUint8(0, 0);
-        dv.setUint32(1, enc.byteLength, false);
-        new Uint8Array(buf, 5).set(enc);
-        const res = await fetch(`${baseUrl}/apiv2/kimi.gateway.chat.v1.ChatService/Chat`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/connect+json",
-            "Connect-Protocol-Version": "1",
-            Accept: "*/*",
-            Origin: baseUrl,
-            Referer: `${baseUrl}/`,
-            "X-Language": "zh-CN",
-            "X-Msh-Platform": "web",
-            Authorization: `Bearer ${kimiAuthToken}`
-          },
-          body: buf
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          return { ok: false, error: text.slice(0, 400) };
-        }
-        const arr = await res.arrayBuffer();
-        const u8 = new Uint8Array(arr);
-        const texts = [];
-        let o = 0;
-        while (o + 5 <= u8.length) {
-          const len = new DataView(u8.buffer, u8.byteOffset + o + 1, 4).getUint32(0, false);
-          if (o + 5 + len > u8.length) {
-            break;
-          }
-          const chunk = u8.slice(o + 5, o + 5 + len);
+        let convId2 = conversationId || "";
+        if (!convId2) {
           try {
-            const obj = JSON.parse(new TextDecoder().decode(chunk));
-            if (obj.error) {
-              return {
-                ok: false,
-                error: obj.error.message || obj.error.code || JSON.stringify(obj.error).slice(0, 200)
-              };
+            const createRes = await fetch(`${baseUrl}/api/chat`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                name: "New Chat",
+                is_example: false,
+                born_from: "",
+                kimiplus_id: ""
+              })
+            });
+            if (createRes.ok) {
+              const convData = await createRes.json();
+              convId2 = convData.id || "";
             }
-            if (obj.block?.text?.content && ["set", "append"].includes(obj.op || "")) {
-              texts.push(obj.block.text.content);
+            if (!convId2) {
+              return { ok: false, error: "Failed to create Kimi conversation" };
             }
-            if (obj.done) {
-              break;
-            }
-          } catch {
+          } catch (e) {
+            return { ok: false, error: `Create conversation failed: ${e instanceof Error ? e.message : String(e)}` };
           }
-          o += 5 + len;
         }
-        return { ok: true, text: texts.join("") };
+        try {
+          const chatRes = await fetch(`${baseUrl}/api/chat/${convId2}/completion/stream`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              messages: [{ role: "user", content: message }],
+              refs: [],
+              use_search: false,
+              kimiplus_id: ""
+            })
+          });
+          if (!chatRes.ok) {
+            const errText = await chatRes.text();
+            return { ok: false, error: `HTTP ${chatRes.status}: ${errText.slice(0, 400)}` };
+          }
+          const text = await chatRes.text();
+          const lines = text.split("\n");
+          const texts = [];
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") break;
+            try {
+              const obj = JSON.parse(data);
+              if (obj.error) {
+                return { ok: false, error: obj.error.message || JSON.stringify(obj.error).slice(0, 200) };
+              }
+              if (obj.event === "cmpl" && obj.text) {
+                texts.push(obj.text);
+              }
+            } catch {
+            }
+          }
+          return { ok: true, text: texts.join(""), convId: convId2 };
+        } catch (e) {
+          return { ok: false, error: `Chat request failed: ${e instanceof Error ? e.message : String(e)}` };
+        }
       },
       {
         baseUrl: this.baseUrl,
         message: params.message,
         kimiAuthToken: kimiAuth,
-        scenario: params.model.includes("search") ? "SCENARIO_SEARCH" : params.model.includes("research") ? "SCENARIO_RESEARCH" : params.model.includes("k1") ? "SCENARIO_K1" : "SCENARIO_K2"
+        scenario,
+        conversationId: params.conversationId
       }
     );
     if (!result.ok) {
       throw new Error(`Kimi API \u9519\u8BEF: ${result.error}`);
     }
+    console.log(`[Kimi Web] API response: textLen=${result.text.length}, convId=${result.convId}`);
     const escaped = JSON.stringify(result.text);
-    const sse = `data: {"text":${escaped}}
+    const convId = result.convId || "";
+    const sse = `data: {"text":${escaped},"conversation_id":"${convId}"}
 
 data: [DONE]
 
@@ -12736,777 +12479,6 @@ No self-talk. Reply in user's language. \u5982\u679C\u7528\u6237\u8BF4\u4E2D\u65
   };
 }
 
-// src/zero-token/streams/xiaomimo-web-stream.ts
-import {
-  createAssistantMessageEventStream as createAssistantMessageEventStream13
-} from "@mariozechner/pi-ai";
-
-// src/zero-token/providers/xiaomimo-web-client-browser.ts
-init_shared_browser();
-import crypto8 from "node:crypto";
-var XIAOMIMO_BASE_URL2 = "https://aistudio.xiaomimimo.com";
-var MODEL_MAP = {
-  "xiaomimo-chat": "mimo-v2-flash-studio",
-  "mimo-v2-pro": "mimo-v2-flash-studio"
-};
-var XiaomiMimoWebClientBrowser = class {
-  cookie;
-  browser = null;
-  page = null;
-  running = null;
-  conversationId = null;
-  constructor(options) {
-    if (typeof options === "string") {
-      try {
-        const parsed = JSON.parse(options);
-        this.cookie = parsed.cookie;
-      } catch {
-        this.cookie = options;
-      }
-    } else {
-      this.cookie = options.cookie;
-    }
-  }
-  async ensureBrowser() {
-    if (this.browser && this.page) {
-      return { browser: this.browser, page: this.page };
-    }
-    const { context, page } = await getSharedBrowser("XiaomiMimo Web Browser", `${XIAOMIMO_BASE_URL2}/`);
-    this.browser = context;
-    this.page = page;
-    const rawCookies = this.cookie.split(";").filter((c) => c.trim().includes("=")).map((c) => {
-      const [name, ...values] = c.trim().split("=");
-      let value = values.join("=").trim();
-      if (value.startsWith('"') && value.endsWith('"')) {
-        value = value.slice(1, -1);
-      }
-      return { name: name.trim(), value, domain: ".xiaomimimo.com", path: "/" };
-    }).filter((c) => c.name.length > 0);
-    if (rawCookies.length > 0) {
-      try {
-        await this.browser.addCookies(rawCookies);
-      } catch {
-      }
-    }
-    return { browser: this.browser, page: this.page };
-  }
-  async init() {
-    await this.ensureBrowser();
-  }
-  async chatCompletions(params) {
-    const { page } = await this.ensureBrowser();
-    const modelInternal = MODEL_MAP[params.model] || params.model;
-    const convId = params.conversationId || this.conversationId || "0";
-    const msgId = crypto8.randomUUID().replace(/-/g, "");
-    console.log(`[XiaomiMimo] Model: ${params.model} -> ${modelInternal}`);
-    console.log(`[XiaomiMimo] Conversation: ${convId}`);
-    const result = await page.evaluate(
-      async ({
-        message,
-        modelInternal: modelInternal2,
-        convId: convId2,
-        msgId: msgId2
-      }) => {
-        const botPhMatch = document.cookie.match(/xiaomichatbot_ph=([^;]+)/);
-        const botPh = botPhMatch?.[1] || "";
-        const url = `/open-apis/bot/chat?xiaomichatbot_ph=${encodeURIComponent(botPh)}`;
-        const body = {
-          msgId: msgId2,
-          conversationId: convId2,
-          query: message,
-          isEditedQuery: false,
-          modelConfig: {
-            enableThinking: false,
-            webSearchStatus: "disabled",
-            model: modelInternal2,
-            temperature: 0.8,
-            topP: 0.95
-          },
-          multiMedias: []
-        };
-        console.log("[MiMo XHR] Sending to:", url);
-        console.log("[MiMo XHR] Body:", JSON.stringify(body).substring(0, 200));
-        return new Promise(
-          (resolve) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open("POST", url, true);
-            xhr.setRequestHeader("Content-Type", "application/json");
-            xhr.setRequestHeader("Accept", "text/event-stream, */*");
-            xhr.withCredentials = true;
-            let resolved = false;
-            const timer = setTimeout(() => {
-              if (!resolved) {
-                resolved = true;
-                console.log("[MiMo XHR] Timeout, got:", xhr.responseText.length, "bytes");
-                resolve({ ok: xhr.responseText.length > 0, data: xhr.responseText });
-              }
-            }, 3e4);
-            xhr.addEventListener("progress", () => {
-              if (xhr.responseText.length > 0 && !resolved) {
-                console.log("[MiMo XHR] Receiving:", xhr.responseText.length, "bytes");
-              }
-            });
-            xhr.addEventListener("load", () => {
-              if (!resolved) {
-                resolved = true;
-                clearTimeout(timer);
-                console.log(
-                  "[MiMo XHR] Loaded, status:",
-                  xhr.status,
-                  "length:",
-                  xhr.responseText.length
-                );
-                let newConvId;
-                const convMatch = xhr.responseText.match(/conversationId['":\s]+['"]?([a-f0-9]+)/);
-                if (convMatch) {
-                  newConvId = convMatch[1];
-                }
-                if (xhr.status >= 200 && xhr.status < 300) {
-                  resolve({ ok: true, data: xhr.responseText, convId: newConvId });
-                } else {
-                  resolve({ ok: false, data: "", error: `HTTP ${xhr.status}` });
-                }
-              }
-            });
-            xhr.addEventListener("error", () => {
-              if (!resolved) {
-                resolved = true;
-                clearTimeout(timer);
-                console.log("[MiMo XHR] Error");
-                resolve({ ok: false, data: "", error: "XHR error" });
-              }
-            });
-            xhr.send(JSON.stringify(body));
-          }
-        );
-      },
-      { message: params.message, modelInternal, convId, msgId }
-    );
-    console.log(`[XiaomiMimo] Result: ok=${result.ok}, len=${result.data?.length || 0}`);
-    console.log(`[XiaomiMimo] Response: ${result.data?.substring(0, 300)}`);
-    if (result.convId) {
-      this.conversationId = result.convId;
-      console.log(`[XiaomiMimo] Saved conversationId: ${result.convId}`);
-    }
-    if (!result.ok && !result.data) {
-      throw new Error(`XiaomiMimo API error: ${result.error || "No response"}`);
-    }
-    const encoder = new TextEncoder();
-    return new ReadableStream({
-      start(controller) {
-        if (result.data) {
-          controller.enqueue(encoder.encode(result.data));
-        }
-        controller.close();
-      }
-    });
-  }
-  async close() {
-    await releaseSharedBrowser();
-    this.browser = null;
-    this.page = null;
-  }
-  async discoverModels() {
-    return [
-      {
-        id: "xiaomimo-chat",
-        name: "MiMo Chat",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128e3,
-        maxTokens: 4096
-      },
-      {
-        id: "mimo-v2-pro",
-        name: "MiMo V2 Pro",
-        reasoning: true,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128e3,
-        maxTokens: 8192
-      }
-    ];
-  }
-};
-
-// src/zero-token/streams/xiaomimo-web-stream.ts
-var sessionMap9 = /* @__PURE__ */ new Map();
-function createXiaomiMimoWebStreamFn(cookieOrJson) {
-  let options;
-  try {
-    const parsed = JSON.parse(cookieOrJson);
-    options = { cookie: parsed.cookie || cookieOrJson };
-  } catch {
-    options = { cookie: cookieOrJson };
-  }
-  const client = new XiaomiMimoWebClientBrowser(options);
-  return (model, context, streamOptions) => {
-    const stream = createAssistantMessageEventStream13();
-    const run = async () => {
-      try {
-        const messages = context.messages;
-        const systemPrompt = context.systemPrompt || "";
-        const tools = context.tools || [];
-        const sessionKey = model.id;
-        const sessionId = sessionMap9.get(sessionKey);
-        let toolPrompt = "";
-        if (tools.length > 0) {
-          toolPrompt = '\n\n[\u5DE5\u5177\u683C\u5F0F] <tool_call id="call_1" name="\u5DE5\u5177\u540D">{"\u53C2\u6570":"\u503C"}</tool_call>\n\u5DE5\u5177\uFF1Aread\u3001write\u3001exec\u3001edit\u3001browser\n\u4F8B\uFF1A<tool_call id="call_1" name="browser">{"action":"navigate","url":"https://baidu.com"}</tool_call>\n\u4F8B\uFF1A<tool_call id="call_2" name="exec">{"command":"python hello.py"}</tool_call>\n[\u89C4\u5219] \u7528\u6237\u8981\u6C42\u64CD\u4F5C\u6587\u4EF6\u3001\u8FD0\u884C\u547D\u4EE4\u3001\u6253\u5F00\u6D4F\u89C8\u5668\u65F6\u8C03\u7528\u5DE5\u5177\u3002\u5199\u4EE3\u7801\u3001\u56DE\u7B54\u95EE\u9898\u76F4\u63A5\u6587\u672C\u56DE\u590D\u3002\n\u601D\u8003\u8FC7\u7A0B\u653E\u5728<think></think>\u5185\uFF0C\u56DE\u590D\u53EA\u8F93\u51FA\u6700\u7EC8\u7ED3\u679C\u3002\u7528\u4E2D\u6587\u7B80\u77ED\u56DE\u590D\u3002';
-        }
-        let prompt = "";
-        if (!sessionId) {
-          const historyParts = [];
-          let systemPromptContent = systemPrompt;
-          if (toolPrompt) {
-            systemPromptContent += toolPrompt;
-          }
-          if (systemPromptContent && !messages.some((m) => m.role === "system")) {
-            historyParts.push(`System: ${systemPromptContent}`);
-          }
-          for (const m of messages) {
-            const role = m.role === "user" || m.role === "toolResult" ? "User" : "Assistant";
-            let content = "";
-            if (m.role === "toolResult") {
-              const tr = m;
-              let resultText = "";
-              if (Array.isArray(tr.content)) {
-                for (const part of tr.content) {
-                  if (part.type === "text") {
-                    resultText += part.text;
-                  }
-                }
-              }
-              content = `
-<tool_response id="${tr.toolCallId}" name="${tr.toolName}">
-${resultText}
-</tool_response>
-`;
-            } else if (Array.isArray(m.content)) {
-              for (const part of m.content) {
-                if (part.type === "text") {
-                  content += part.text;
-                } else if (part.type === "thinking") {
-                  content += `<think>
-${part.thinking}
-
-</think>
-`;
-                } else if (part.type === "toolCall") {
-                  const tc = part;
-                  content += `<tool_call id="${tc.id}" name="${tc.name}">${JSON.stringify(tc.arguments)}</tool_call>`;
-                }
-              }
-            } else {
-              content = String(m.content);
-            }
-            historyParts.push(`${role}: ${content}`);
-          }
-          prompt = historyParts.join("\n\n");
-        } else {
-          const lastMsg = messages[messages.length - 1];
-          if (lastMsg?.role === "toolResult") {
-            const tr = lastMsg;
-            let resultText = "";
-            if (Array.isArray(tr.content)) {
-              for (const part of tr.content) {
-                if (part.type === "text") {
-                  resultText += part.text;
-                }
-              }
-            }
-            prompt = `
-<tool_response id="${tr.toolCallId}" name="${tr.toolName}">
-${resultText}
-</tool_response>
-
-Please proceed based on this tool result.`;
-          } else {
-            const lastUserMessage = [...messages].toReversed().find((m) => m.role === "user");
-            if (lastUserMessage) {
-              if (typeof lastUserMessage.content === "string") {
-                prompt = lastUserMessage.content;
-              } else if (Array.isArray(lastUserMessage.content)) {
-                prompt = lastUserMessage.content.filter((part) => part.type === "text").map((part) => part.text).join("");
-              }
-            }
-          }
-        }
-        const toolsAvailable = (context.tools || []).length > 0;
-        if (toolsAvailable) {
-          if (sessionId) {
-            prompt += '\n\n[\u5DE5\u5177\u683C\u5F0F] <tool_call id="call_1" name="\u5DE5\u5177\u540D">{"\u53C2\u6570":"\u503C"}</tool_call>\n\u5DE5\u5177\uFF1Aread\u3001write\u3001exec\u3001edit\u3001browser\n\u4F8B\uFF1A<tool_call id="call_1" name="browser">{"action":"navigate","url":"https://baidu.com"}</tool_call>\n\u601D\u8003\u653E<think></think>\u5185\uFF0C\u56DE\u590D\u53EA\u8F93\u51FA\u7ED3\u679C\u3002\u7528\u4E2D\u6587\u3002';
-          } else {
-            prompt += '\n\n[\u63D0\u9192] \u5DE5\u5177\uFF1Aread\u3001write\u3001exec\u3001edit\u3001browser\u3002\u683C\u5F0F\uFF1A<tool_call id="call_1" name="exec">{"command":"\u547D\u4EE4"}</tool_call>\n\u601D\u8003\u653E<think></think>\u5185\uFF0C\u56DE\u590D\u53EA\u8F93\u51FA\u7ED3\u679C\u3002\u7528\u4E2D\u6587\u3002';
-          }
-        }
-        if (!prompt) {
-          throw new Error("No message found to send to XiaomiMimo Web API");
-        }
-        const MAX_PROMPT_LENGTH = 3e3;
-        if (prompt.length > MAX_PROMPT_LENGTH) {
-          console.log(
-            `[XiaomiMimoWebStream] Truncating from ${prompt.length} to ${MAX_PROMPT_LENGTH}`
-          );
-          const sysPrefix = "\u4F60\u662FAI\u52A9\u624B\u3002\u601D\u8003\u8FC7\u7A0B\u653E\u5728<think></think>\u5185\uFF0C\u56DE\u590D\u53EA\u8F93\u51FA\u6700\u7EC8\u7ED3\u679C\uFF0C\u7981\u6B62\u81EA\u8A00\u81EA\u8BED\u3002\u7B80\u77ED\u56DE\u590D\u3002";
-          const toolInst = toolPrompt || "";
-          const userParts = prompt.split("User:");
-          const lastUser = userParts[userParts.length - 1];
-          const endReminder = toolsAvailable ? "\n[\u63D0\u9192]\u8C03\u7528\u5DE5\u5177\u53EA\u8F93\u51FAXML\u6807\u7B7E\uFF0C\u7981\u6B62\u81EA\u8A00\u81EA\u8BED\uFF0C\u7528\u4E2D\u6587\u7B80\u77ED\u56DE\u590D\u3002" : "";
-          const headerLen = sysPrefix.length + toolInst.length + endReminder.length + 20;
-          const remainingLen = MAX_PROMPT_LENGTH - headerLen;
-          prompt = "System: " + sysPrefix + toolInst + "\n\nUser:" + (lastUser || "").slice(-remainingLen) + endReminder;
-        }
-        console.log(`[XiaomiMimoWebStream] Starting run for session: ${sessionKey}`);
-        console.log(`[XiaomiMimoWebStream] Conversation ID: ${sessionId || "new"}`);
-        console.log(`[XiaomiMimoWebStream] Tools available: ${tools.length}`);
-        console.log(`[XiaomiMimoWebStream] Prompt length: ${prompt.length}`);
-        const responseStream = await client.chatCompletions({
-          conversationId: sessionId,
-          message: prompt,
-          model: model.id,
-          signal: streamOptions?.signal
-        });
-        if (!responseStream) {
-          throw new Error("XiaomiMimo Web API returned empty response body");
-        }
-        const reader = responseStream.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        const indexMap = /* @__PURE__ */ new Map();
-        let nextIndex = 0;
-        const contentParts = [];
-        const accumulatedToolCalls = [];
-        const createPartial = () => {
-          const msg = {
-            role: "assistant",
-            content: [...contentParts],
-            api: model.api,
-            provider: model.provider,
-            model: model.id,
-            usage: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              totalTokens: 0,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
-            },
-            stopReason: accumulatedToolCalls.length > 0 ? "toolUse" : "stop",
-            timestamp: Date.now()
-          };
-          msg.thinking_enabled = contentParts.some((p) => p.type === "thinking");
-          return msg;
-        };
-        let currentMode = "text";
-        let currentToolName = "";
-        let currentToolIndex = 0;
-        let tagBuffer = "";
-        let totalTextEmitted = 0;
-        let currentEvent = "";
-        let hasSeenToolCall = false;
-        const preToolTextBuffer = [];
-        const emitDelta = (type, delta, forceId) => {
-          if (delta === "" && type !== "toolcall") {
-            return;
-          }
-          if (toolsAvailable && type === "text" && !hasSeenToolCall) {
-            preToolTextBuffer.push(delta);
-            totalTextEmitted += delta.length;
-            return;
-          }
-          const key = type === "toolcall" ? `tool_${currentToolIndex}` : type;
-          if (!indexMap.has(key)) {
-            const index2 = nextIndex++;
-            indexMap.set(key, index2);
-            if (type === "text") {
-              contentParts[index2] = { type: "text", text: "" };
-              stream.push({ type: "text_start", contentIndex: index2, partial: createPartial() });
-            } else if (type === "thinking") {
-              contentParts[index2] = { type: "thinking", thinking: "" };
-              stream.push({
-                type: "thinking_start",
-                contentIndex: index2,
-                partial: createPartial()
-              });
-            } else if (type === "toolcall") {
-              const toolId = forceId || `call_${Date.now()}_${index2}`;
-              contentParts[index2] = {
-                type: "toolCall",
-                id: toolId,
-                name: currentToolName,
-                arguments: {}
-              };
-              accumulatedToolCalls[currentToolIndex] = {
-                id: toolId,
-                name: currentToolName,
-                arguments: "",
-                index: currentToolIndex
-              };
-              stream.push({
-                type: "toolcall_start",
-                contentIndex: index2,
-                partial: createPartial()
-              });
-            }
-          }
-          const index = indexMap.get(key);
-          if (type === "text") {
-            contentParts[index].text += delta;
-            stream.push({
-              type: "text_delta",
-              contentIndex: index,
-              delta,
-              partial: createPartial()
-            });
-          } else if (type === "thinking") {
-            contentParts[index].thinking += delta;
-            stream.push({
-              type: "thinking_delta",
-              contentIndex: index,
-              delta,
-              partial: createPartial()
-            });
-          } else if (type === "toolcall") {
-            accumulatedToolCalls[currentToolIndex].arguments += delta;
-            stream.push({
-              type: "toolcall_delta",
-              contentIndex: index,
-              delta,
-              partial: createPartial()
-            });
-          }
-        };
-        const pushDelta = (delta, forceType) => {
-          if (!delta) {
-            return;
-          }
-          if (delta === "[DONE]" || delta === "<|endoftext|>") {
-            return;
-          }
-          if (forceType === "thinking") {
-            emitDelta("thinking", delta);
-            return;
-          }
-          tagBuffer += delta;
-          const checkTags = () => {
-            const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
-            const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
-            const toolCallStart = tagBuffer.match(
-              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i
-            );
-            const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
-            const indices = [
-              {
-                type: "think_start",
-                idx: thinkStart?.index ?? -1,
-                len: thinkStart?.[0].length ?? 0
-              },
-              { type: "think_end", idx: thinkEnd?.index ?? -1, len: thinkEnd?.[0].length ?? 0 },
-              {
-                type: "tool_start",
-                idx: toolCallStart?.index ?? -1,
-                len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1] || toolCallStart?.[3],
-                name: toolCallStart?.[2]
-              },
-              {
-                type: "tool_end",
-                idx: toolCallEnd?.index ?? -1,
-                len: toolCallEnd?.[0].length ?? 0
-              }
-            ].filter((t) => t.idx !== -1).toSorted((a, b) => a.idx - b.idx);
-            if (indices.length > 0) {
-              const first = indices[0];
-              const before = tagBuffer.slice(0, first.idx);
-              if (before) {
-                if (currentMode === "thinking") {
-                  emitDelta("thinking", before);
-                } else if (currentMode === "tool_call") {
-                  emitDelta("toolcall", before);
-                } else {
-                  emitDelta("text", before);
-                }
-              }
-              if (first.type === "think_start") {
-                currentMode = "thinking";
-              } else if (first.type === "think_end") {
-                currentMode = "text";
-              } else if (first.type === "tool_start") {
-                currentMode = "tool_call";
-                currentToolName = first.name;
-                if (!hasSeenToolCall) {
-                  hasSeenToolCall = true;
-                  preToolTextBuffer.length = 0;
-                  console.log(`[XiaomiMimoWebStream] Tool call detected, discarded ${totalTextEmitted} chars of pre-tool text`);
-                }
-                emitDelta("toolcall", "", first.id);
-              } else if (first.type === "tool_end") {
-                const index = indexMap.get(`tool_${currentToolIndex}`);
-                if (index !== void 0) {
-                  const part = contentParts[index];
-                  const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
-                  let cleanedArg = argStr.trim();
-                  if (cleanedArg.startsWith("```json")) {
-                    cleanedArg = cleanedArg.substring(7);
-                  } else if (cleanedArg.startsWith("```")) {
-                    cleanedArg = cleanedArg.substring(3);
-                  }
-                  if (cleanedArg.endsWith("```")) {
-                    cleanedArg = cleanedArg.substring(0, cleanedArg.length - 3);
-                  }
-                  cleanedArg = cleanedArg.trim();
-                  try {
-                    part.arguments = JSON.parse(cleanedArg);
-                  } catch {
-                    part.arguments = { raw: argStr };
-                    console.error(
-                      `[XiaomiMimoWebStream] Failed to parse JSON for tool call ${currentToolName}:`,
-                      argStr
-                    );
-                  }
-                  stream.push({
-                    type: "toolcall_end",
-                    contentIndex: index,
-                    toolCall: part,
-                    partial: createPartial()
-                  });
-                }
-                currentMode = "text";
-                currentToolIndex++;
-              }
-              tagBuffer = tagBuffer.slice(first.idx + first.len);
-              checkTags();
-            } else {
-              const lastAngle = tagBuffer.lastIndexOf("<");
-              if (lastAngle === -1) {
-                const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
-                emitDelta(mode, tagBuffer);
-                tagBuffer = "";
-              } else if (lastAngle > 0) {
-                const safe = tagBuffer.slice(0, lastAngle);
-                const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
-                emitDelta(mode, safe);
-                tagBuffer = tagBuffer.slice(lastAngle);
-              }
-            }
-          };
-          checkTags();
-        };
-        const processLine = (line) => {
-          if (!line) {
-            return;
-          }
-          if (line.startsWith("event:")) {
-            const event = line.slice(6).trim();
-            if (event === "error") {
-              currentMode = "error";
-            } else if (event === "dialogId") {
-              currentEvent = "dialogId";
-            } else {
-              currentEvent = event;
-            }
-            return;
-          }
-          if (!line.startsWith("data:")) {
-            return;
-          }
-          const dataStr = line.slice(5).trim();
-          if (dataStr === "[DONE]" || !dataStr) {
-            return;
-          }
-          try {
-            const data = JSON.parse(dataStr);
-            if (currentEvent === "dialogId" && data.content) {
-              const convId = String(data.content);
-              console.log(`[XiaomiMimoWebStream] Captured conversationId: ${convId}`);
-              sessionMap9.set(sessionKey, convId);
-              currentEvent = "";
-              return;
-            }
-            currentEvent = "";
-            if (data.sessionId || data.conversationId) {
-              sessionMap9.set(sessionKey, data.sessionId || data.conversationId);
-            }
-            if (data.content && typeof data.content === "string") {
-              pushDelta(data.content);
-              return;
-            }
-            const delta = data.choices?.[0]?.delta?.content ?? data.text ?? data.delta;
-            if (typeof delta === "string" && delta) {
-              pushDelta(delta);
-            }
-          } catch {
-            if (dataStr.length > 0 && !dataStr.startsWith("{")) {
-              pushDelta(dataStr);
-            }
-          }
-        };
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            if (buffer.trim()) {
-              processLine(buffer.trim());
-            }
-            break;
-          }
-          const chunk = decoder.decode(value, { stream: true });
-          const combined = buffer + chunk;
-          const parts = combined.split("\n");
-          buffer = parts.pop() || "";
-          for (const part of parts) {
-            processLine(part.trim());
-          }
-        }
-        if (!hasSeenToolCall && preToolTextBuffer.length > 0) {
-          console.log(`[XiaomiMimoWebStream] No tool calls, flushing ${preToolTextBuffer.length} buffered text chunks`);
-          let fullText = preToolTextBuffer.join("");
-          if (fullText.length > 200) {
-            const selfTalkMarkers = [
-              "\u6216\u8BB8",
-              "\u6211\u8BA4\u4E3A",
-              "\u6211\u51B3\u5B9A",
-              "\u4E3A\u4E86",
-              "\u65E2\u7136",
-              "\u8BA9\u6211",
-              "\u6211\u5E94\u8BE5",
-              "\u6211\u9700\u8981",
-              "\u6211\u53EF\u4EE5",
-              "\u6211\u5C06",
-              "\u6307\u4EE4\u8BF4",
-              "\u7528\u6237\u8BF4",
-              "\u5DE5\u5177\u8C03\u7528",
-              "\u7CFB\u7EDF\u63D0\u793A",
-              "\u56DE\u590D\u8349\u7A3F",
-              "\u6B65\u9AA4",
-              "\u8BA1\u5212",
-              "\u5047\u8BBE",
-              "\u98CE\u9669",
-              "\u53E6\u4E00\u4E2A\u60F3\u6CD5",
-              "\u4E3A\u4E86\u7B80",
-              "\u4E3A\u4E86\u7CBE\u786E",
-              "\u4E3A\u4E86\u9075\u5FAA",
-              "\u6700\u7EC8\u56DE\u590D",
-              "\u610F\u601D\u662F",
-              "\u53EF\u80FD",
-              "\u770B\u7528\u6237",
-              "\u770B\u63D0\u793A",
-              "\u5728\u54CD\u5E94\u4E2D",
-              "\u5728\u56DE\u590D\u4E2D",
-              "\u5728\u8FD9\u4E2A",
-              "\u5BF9\u4E8E",
-              "\u4F5C\u4E3AAI",
-              "\u4F5C\u4E3AMiMo",
-              "\u8FD9\u662F\u4E00\u4E2A\u77DB\u76FE",
-              "\u6240\u4EE5\uFF0C",
-              "\u4F46\u662F\uFF0C",
-              "\u7136\u540E\uFF0C",
-              "\u73B0\u5728\uFF0C",
-              "\u6700\u7EC8\uFF0C",
-              "\u7528\u6237\u671F\u671B",
-              "\u7528\u6237\u6D88\u606F",
-              "\u7528\u6237\u7684\u6D88\u606F",
-              "\u7528\u6237\u53EF\u80FD",
-              "\u601D\u8003\uFF1A",
-              "\u601D\u8003\u8FC7\u7A0B",
-              "\u63A8\u7406",
-              "\u5206\u6790"
-            ];
-            const lines = fullText.split("\n").filter((l) => l.trim());
-            const selfTalkCount = lines.filter(
-              (l) => selfTalkMarkers.some((m) => l.includes(m))
-            ).length;
-            if (selfTalkCount > lines.length * 0.3) {
-              console.log(`[XiaomiMimoWebStream] Detected self-talk (${selfTalkCount}/${lines.length} lines), filtering`);
-              const paragraphs = fullText.split(/\n\n+/);
-              let cleanIdx = -1;
-              for (let i = paragraphs.length - 1; i >= 0; i--) {
-                const p = paragraphs[i].trim();
-                if (!p) continue;
-                const isSelfTalk = selfTalkMarkers.some((m) => p.includes(m));
-                if (!isSelfTalk && p.length > 5 && p.length < 500) {
-                  cleanIdx = i;
-                  break;
-                }
-              }
-              if (cleanIdx !== -1) {
-                fullText = paragraphs[cleanIdx].trim();
-                console.log(`[XiaomiMimoWebStream] Extracted clean paragraph (${fullText.length} chars)`);
-              } else {
-                const cleanLines = lines.filter((l) => {
-                  const trimmed = l.trim();
-                  return trimmed.length > 2 && !selfTalkMarkers.some((m) => trimmed.includes(m));
-                });
-                if (cleanLines.length > 0) {
-                  fullText = cleanLines[cleanLines.length - 1].trim();
-                  console.log(`[XiaomiMimoWebStream] Extracted last clean line (${fullText.length} chars)`);
-                } else {
-                  const lastLine = lines[lines.length - 1]?.trim() || "";
-                  fullText = lastLine || "\u64CD\u4F5C\u5B8C\u6210\u3002";
-                  console.log(`[XiaomiMimoWebStream] Fallback to last line`);
-                }
-              }
-            }
-          }
-          fullText = fullText.replace(/\[DONE\]/g, "").trim();
-          if (fullText) {
-            const key = "text";
-            if (!indexMap.has(key)) {
-              const index2 = nextIndex++;
-              indexMap.set(key, index2);
-              contentParts[index2] = { type: "text", text: "" };
-              stream.push({ type: "text_start", contentIndex: index2, partial: createPartial() });
-            }
-            const index = indexMap.get(key);
-            contentParts[index].text += fullText;
-            stream.push({ type: "text_delta", contentIndex: index, delta: fullText, partial: createPartial() });
-          }
-        }
-        if (tagBuffer) {
-          const resolvedMode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
-          emitDelta(resolvedMode, tagBuffer);
-        }
-        console.log(
-          `[XiaomiMimoWebStream] Stream completed. Parts: ${contentParts.length}, Tools: ${accumulatedToolCalls.length}`
-        );
-        stream.push({
-          type: "done",
-          reason: accumulatedToolCalls.length > 0 ? "toolUse" : "stop",
-          message: createPartial()
-        });
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        stream.push({
-          type: "error",
-          reason: "error",
-          error: {
-            role: "assistant",
-            content: [],
-            stopReason: "error",
-            errorMessage,
-            api: model.api,
-            provider: model.provider,
-            model: model.id,
-            usage: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              totalTokens: 0,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
-            },
-            timestamp: Date.now()
-          }
-        });
-      } finally {
-        stream.end();
-      }
-    };
-    queueMicrotask(() => void run());
-    return stream;
-  };
-}
-
 // src/index.ts
 var ZERO_TOKEN_GROUP_ID = "zero-token";
 var ZERO_TOKEN_GROUP_LABEL = "Zero Token";
@@ -13619,15 +12591,6 @@ var WEB_PROVIDERS = [
     buildProvider: buildQwenWebProvider,
     createStreamFn: createQwenWebStreamFn,
     login: loginQwenWeb
-  },
-  {
-    id: "xiaomimo-web",
-    label: "Xiaomi MiMo (Web)",
-    envVar: "XIAOMIMO_WEB_COOKIE",
-    defaultModelId: "xiaomimo-chat",
-    buildProvider: buildXiaomiMimoWebProvider,
-    createStreamFn: createXiaomiMimoWebStreamFn,
-    login: loginXiaomiMimoWeb
   }
 ];
 function createAuthProgress(ctx, label) {

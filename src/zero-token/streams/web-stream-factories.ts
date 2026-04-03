@@ -11,7 +11,6 @@ import { createKimiWebStreamFn } from "./kimi-web-stream.js";
 import { createPerplexityWebStreamFn } from "./perplexity-web-stream.js";
 import { createQwenCNWebStreamFn } from "./qwen-cn-web-stream.js";
 import { createQwenWebStreamFn } from "./qwen-web-stream.js";
-import { createXiaomiMimoWebStreamFn } from "./xiaomimo-web-stream.js";
 
 /** model.api → stream factory (matches former attempt.ts / compact.ts branches). */
 const WEB_STREAM_FACTORIES = {
@@ -27,7 +26,6 @@ const WEB_STREAM_FACTORIES = {
   "glm-web": createGlmWebStreamFn,
   "glm-intl-web": createGlmIntlWebStreamFn,
   "perplexity-web": createPerplexityWebStreamFn,
-  "xiaomimo-web": createXiaomiMimoWebStreamFn,
 } as const satisfies Record<string, (cookie: string) => StreamFn>;
 
 export type WebStreamApiId = keyof typeof WEB_STREAM_FACTORIES;
