@@ -11,44 +11,36 @@ import {
   buildDeepseekWebProvider,
   buildDoubaoWebProvider,
   buildGeminiWebProvider,
-  buildGlmIntlWebProvider,
   buildGrokWebProvider,
   buildKimiWebProvider,
   buildPerplexityWebProvider,
   buildQwenCNWebProvider,
   buildQwenWebProvider,
-  buildZWebProvider,
   CHATGPT_WEB_DEFAULT_MODEL_ID,
   CLAUDE_WEB_DEFAULT_MODEL_ID,
   DEEPSEEK_WEB_DEFAULT_MODEL_ID,
   DOUBAO_WEB_DEFAULT_MODEL_ID,
   GEMINI_WEB_DEFAULT_MODEL_ID,
-  GLM_INTL_WEB_DEFAULT_MODEL_ID,
   GROK_WEB_DEFAULT_MODEL_ID,
   KIMI_WEB_DEFAULT_MODEL_ID,
   PERPLEXITY_WEB_DEFAULT_MODEL_ID,
   QWEN_WEB_DEFAULT_MODEL_ID,
-  Z_WEB_DEFAULT_MODEL_ID,
 } from "./zero-token/bridge/web-providers.js";
 import { loginChatGPTWeb } from "./zero-token/providers/chatgpt-web-auth.js";
 import { loginClaudeWeb } from "./zero-token/providers/claude-web-auth.js";
 import { loginDeepseekWeb } from "./zero-token/providers/deepseek-web-auth.js";
 import { loginDoubaoWeb } from "./zero-token/providers/doubao-web-auth.js";
 import { loginGeminiWeb } from "./zero-token/providers/gemini-web-auth.js";
-import { loginGlmIntlWeb } from "./zero-token/providers/glm-intl-web-auth.js";
 import { loginGrokWeb } from "./zero-token/providers/grok-web-auth.js";
 import { loginKimiWeb } from "./zero-token/providers/kimi-web-auth.js";
 import { loginPerplexityWeb } from "./zero-token/providers/perplexity-web-auth.js";
 import { loginQwenCNWeb } from "./zero-token/providers/qwen-cn-web-auth.js";
 import { loginQwenWeb } from "./zero-token/providers/qwen-web-auth.js";
-import { loginZWeb } from "./zero-token/providers/glm-web-auth.js";
 import { createChatGPTWebStreamFn } from "./zero-token/streams/chatgpt-web-stream.js";
 import { createClaudeWebStreamFn } from "./zero-token/streams/claude-web-stream.js";
 import { createDeepseekWebStreamFn } from "./zero-token/streams/deepseek-web-stream.js";
 import { createDoubaoWebStreamFn } from "./zero-token/streams/doubao-web-stream.js";
 import { createGeminiWebStreamFn } from "./zero-token/streams/gemini-web-stream.js";
-import { createGlmIntlWebStreamFn } from "./zero-token/streams/glm-intl-web-stream.js";
-import { createGlmWebStreamFn } from "./zero-token/streams/glm-web-stream.js";
 import { createGrokWebStreamFn } from "./zero-token/streams/grok-web-stream.js";
 import { createKimiWebStreamFn } from "./zero-token/streams/kimi-web-stream.js";
 import { createPerplexityWebStreamFn } from "./zero-token/streams/perplexity-web-stream.js";
@@ -233,24 +225,6 @@ const WEB_PROVIDERS: WebProviderDescriptor[] = [
     buildProvider: buildGeminiWebProvider,
     createStreamFn: createGeminiWebStreamFn,
     login: loginGeminiWeb,
-  },
-  {
-    id: "glm-intl-web",
-    label: "GLM International (Web)",
-    envVar: "GLM_INTL_WEB_COOKIE",
-    defaultModelId: GLM_INTL_WEB_DEFAULT_MODEL_ID,
-    buildProvider: buildGlmIntlWebProvider,
-    createStreamFn: createGlmIntlWebStreamFn,
-    login: loginGlmIntlWeb,
-  },
-  {
-    id: "glm-web",
-    label: "GLM (Web)",
-    envVar: "GLM_WEB_COOKIE",
-    defaultModelId: Z_WEB_DEFAULT_MODEL_ID,
-    buildProvider: buildZWebProvider,
-    createStreamFn: createGlmWebStreamFn,
-    login: loginZWeb,
   },
   {
     id: "grok-web",

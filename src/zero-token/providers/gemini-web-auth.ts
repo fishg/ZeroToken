@@ -4,6 +4,7 @@ import {
   launchOpenClawChrome,
   stopOpenClawChrome,
   getChromeWebSocketUrl,
+  BROWSER_STEALTH_SCRIPT,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
 
@@ -68,6 +69,7 @@ export async function loginGeminiWeb(
       headers: getHeadersWithAuth(wsUrl),
     });
     const context = browser.contexts()[0];
+    await context.addInitScript(BROWSER_STEALTH_SCRIPT);
     const page = context.pages()[0] || (await context.newPage());
 
     onProgress("Navigating to Gemini...");

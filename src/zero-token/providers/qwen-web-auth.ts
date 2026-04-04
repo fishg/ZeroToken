@@ -4,6 +4,7 @@ import {
   launchOpenClawChrome,
   stopOpenClawChrome,
   getChromeWebSocketUrl,
+  BROWSER_STEALTH_SCRIPT,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
 
@@ -63,6 +64,7 @@ export async function loginQwenWeb(params: {
       timeout: 60_000, // 60s，Chrome 多标签或复杂页面时 CDP 握手可能较慢
     });
     const context = browser.contexts()[0];
+    await context.addInitScript(BROWSER_STEALTH_SCRIPT);
     const page = context.pages()[0] || (await context.newPage());
 
     await page.goto("https://chat.qwen.ai/");

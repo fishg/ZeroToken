@@ -5,6 +5,29 @@ import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 import { resolveStateDir } from "./config-paths.js";
+
+/**
+ * Stealth script to hide automation markers from websites.
+ * Inject via context.addInitScript() or page.addInitScript() after connecting via CDP.
+ * Prevents Google/OpenAI from detecting automated browser and forcing re-login.
+ */
+export const BROWSER_STEALTH_SCRIPT = `
+  Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  if (!window.chrome) window.chrome = {};
+  if (!window.chrome.runtime) {
+    window.chrome.runtime = { connect: function(){}, sendMessage: function(){} };
+  }
+  Object.defineProperty(navigator, 'plugins', {
+    get: () => [
+      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+      { name: 'Native Client', filename: 'internal-nacl-plugin' },
+    ],
+  });
+  Object.defineProperty(navigator, 'languages', {
+    get: () => ['zh-CN', 'zh', 'en-US', 'en'],
+  });
+`;
 import { appendCdpPath, getHeadersWithAuth, normalizeCdpWsUrl } from "./browser-cdp.js";
 import {
   type BrowserExecutable,
@@ -89,98 +112,133 @@ function detectUserBrowserDataDir(exePath: string): string | null {
 }
 
 /**
- * Copy password database and encryption key from the user's main browser
- * profile to the auth browser profile.  This gives the auth browser access
- * to saved passwords so the user doesn't have to retype them.
+ * Copy the user's entire browser Default profile to the auth browser profile.
+ * This gives the auth browser access to:
+ *   - Google account login state (Cookies + Preferences)
+ *   - Saved passwords (Login Data)
+ *   - Autofill data (Web Data)
+ *   - All site sessions
  *
- * Files copied:
- *   - Login Data   (SQLite database with encrypted passwords)
- *   - Local State  (JSON with os_crypt.encrypted_key for decryption)
+ * Large directories (Cache, Code Cache, etc.) are excluded.
+ * The Local State file's os_crypt key is force-synced so encrypted data
+ * can be decrypted by the auth browser.
  */
-function copyUserPasswords(exePath: string, targetUserDataDir: string): void {
+function copyUserBrowserProfile(exePath: string, targetUserDataDir: string): void {
   try {
     const sourceDir = detectUserBrowserDataDir(exePath);
     if (!sourceDir || !exists(sourceDir)) return;
 
     const sourceDefault = path.join(sourceDir, "Default");
-    const targetDefault = path.join(targetUserDataDir, "Default");
+    if (!exists(sourceDefault)) return;
 
-    // Ensure target dirs exist
+    const targetDefault = path.join(targetUserDataDir, "Default");
     fs.mkdirSync(targetDefault, { recursive: true });
 
-    // Files to copy from user's browser profile
-    // Cookies = Google login state + all site sessions
-    // Login Data = saved passwords
-    // Web Data = autofill (addresses, cards)
-    const filesToCopy = [
-      "Cookies",              // ALL logged-in sessions (Google account etc.)
-      "Login Data",           // Saved passwords (SQLite)
-      "Login Data For Account", // Account-specific passwords
-      "Web Data",             // Autofill data (addresses, cards)
-    ];
+    // Skip these large/unnecessary directories
+    const skipDirs = new Set([
+      "cache", "code cache", "service worker", "gpucache", "dawncache",
+      "shader cache", "file system", "blob_storage", "session storage",
+      "local storage", "indexeddb", "databases", "platform_notifications",
+      "storage", "webrtc internals", "video decoding stats", "jumplists",
+      "optimization guide", "segmentation platform", "browsing topics",
+      "commerce_hint_data", "commerce", "autofill_ai", "crowd deny",
+      "download service", "shared proto db", "site characteristics database",
+      "smartscreen", "trust tokens", "visited links",
+    ]);
 
-    for (const fileName of filesToCopy) {
-      const src = path.join(sourceDefault, fileName);
-      const dst = path.join(targetDefault, fileName);
-      if (!exists(src)) continue;
-      // Always overwrite — user may have added new passwords since last copy
-      if (exists(dst)) {
+    // Marker file to avoid re-copying on every launch
+    const markerFile = path.join(targetDefault, ".zero-token-profile-copied");
+    if (exists(markerFile)) {
+      // Profile already copied — only sync cookies (they change often)
+      const cookieSrc = path.join(sourceDefault, "Cookies");
+      const cookieDst = path.join(targetDefault, "Cookies");
+      if (exists(cookieSrc)) {
         try {
-          // Only overwrite if source is newer
-          const srcStat = fs.statSync(src);
-          const dstStat = fs.statSync(dst);
-          if (srcStat.mtimeMs <= dstStat.mtimeMs) continue;
-        } catch { /* stat failed, overwrite anyway */ }
+          const data = fs.readFileSync(cookieSrc);
+          fs.writeFileSync(cookieDst, data);
+        } catch { /* non-fatal */ }
       }
-      try {
-        // Use read+write instead of copyFile — reads with shared access,
-        // works even while Chrome/Edge is running (shared read lock)
-        const data = fs.readFileSync(src);
-        fs.writeFileSync(dst, data);
-        console.log(`[zero-token] Copied ${fileName} from user browser`);
-      } catch {
-        // Fallback: PowerShell can read files with shared locks
-        try {
-          execSync(
-            `powershell -NoProfile -Command "[System.IO.File]::Copy('${src.replace(/'/g, "''")}', '${dst.replace(/'/g, "''")}', $true)"`,
-            { stdio: "ignore", timeout: 8000 },
-          );
-          console.log(`[zero-token] Copied ${fileName} via PowerShell`);
-        } catch {
-          console.log(`[zero-token] Could not copy ${fileName} (non-fatal)`);
-        }
-      }
+      // Also sync Local State encryption key
+      syncOsCryptKey(sourceDir, targetUserDataDir);
+      return;
     }
 
-    // Copy encryption key from Local State (needed to decrypt passwords)
-    const sourceLocalState = path.join(sourceDir, "Local State");
-    const targetLocalState = path.join(targetUserDataDir, "Local State");
-    if (exists(sourceLocalState)) {
+    // First-time copy: recursively copy all profile files (excluding caches)
+    console.log("[zero-token] First-time profile sync from user browser...");
+    let copied = 0;
+
+    const copyDir = (srcDir: string, dstDir: string, depth: number) => {
+      if (depth > 3) return; // Don't go too deep
       try {
-        const sourceRaw = fs.readFileSync(sourceLocalState, "utf-8");
-        const sourceState = JSON.parse(sourceRaw);
+        const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+        for (const entry of entries) {
+          const srcPath = path.join(srcDir, entry.name);
+          const dstPath = path.join(dstDir, entry.name);
 
-        // Merge: preserve existing Local State but ensure os_crypt key is present
-        let targetState: Record<string, unknown> = {};
-        if (exists(targetLocalState)) {
-          try {
-            targetState = JSON.parse(fs.readFileSync(targetLocalState, "utf-8"));
-          } catch { /* corrupt file, will be overwritten */ }
-        }
+          if (entry.isDirectory()) {
+            if (skipDirs.has(entry.name.toLowerCase())) continue;
+            fs.mkdirSync(dstPath, { recursive: true });
+            copyDir(srcPath, dstPath, depth + 1);
+          } else if (entry.isFile()) {
+            // Skip very large files (>50MB)
+            try {
+              const stat = fs.statSync(srcPath);
+              if (stat.size > 50 * 1024 * 1024) continue;
+            } catch { continue; }
 
-        if (sourceState.os_crypt) {
-          // Always force-overwrite the encryption key — bootstrap creates a new
-          // key that can't decrypt the user's passwords. We need the user's key.
-          targetState.os_crypt = sourceState.os_crypt;
-          fs.writeFileSync(targetLocalState, JSON.stringify(targetState, null, 2));
-          console.log("[zero-token] Synced encryption key for passwords");
+            try {
+              const data = fs.readFileSync(srcPath);
+              fs.writeFileSync(dstPath, data);
+              copied++;
+            } catch {
+              // File locked or inaccessible — skip
+            }
+          }
         }
       } catch {
-        // Non-fatal
+        // Directory access error — skip
       }
+    };
+
+    copyDir(sourceDefault, targetDefault, 0);
+    console.log(`[zero-token] Copied ${copied} profile files from user browser`);
+
+    // Sync the encryption key
+    syncOsCryptKey(sourceDir, targetUserDataDir);
+
+    // Write marker so we don't re-copy everything next time
+    try {
+      fs.writeFileSync(markerFile, new Date().toISOString());
+    } catch { /* non-fatal */ }
+  } catch (err) {
+    console.warn(`[zero-token] Profile sync error (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Force-sync the os_crypt encryption key from the user's browser to auth browser.
+ * Without this, encrypted cookies/passwords can't be decrypted.
+ */
+function syncOsCryptKey(sourceDir: string, targetUserDataDir: string): void {
+  const sourceLocalState = path.join(sourceDir, "Local State");
+  const targetLocalState = path.join(targetUserDataDir, "Local State");
+  if (!exists(sourceLocalState)) return;
+
+  try {
+    const sourceState = JSON.parse(fs.readFileSync(sourceLocalState, "utf-8"));
+    if (!sourceState.os_crypt) return;
+
+    let targetState: Record<string, unknown> = {};
+    if (exists(targetLocalState)) {
+      try {
+        targetState = JSON.parse(fs.readFileSync(targetLocalState, "utf-8"));
+      } catch { /* corrupt, overwrite */ }
     }
+
+    targetState.os_crypt = sourceState.os_crypt;
+    fs.writeFileSync(targetLocalState, JSON.stringify(targetState, null, 2));
   } catch {
-    // Password copy is best-effort, never block auth flow
+    // non-fatal
   }
 }
 
@@ -310,6 +368,7 @@ export async function launchOpenClawChrome(
       args.push("--disable-dev-shm-usage");
     }
     args.push("--disable-features=AutomationControlled");
+    args.push("--disable-blink-features=AutomationControlled");
     if (resolved.extraArgs.length > 0) {
       args.push(...resolved.extraArgs);
     }
@@ -369,9 +428,9 @@ export async function launchOpenClawChrome(
     console.warn(`openclaw browser clean-exit prefs failed: ${String(error)}`);
   }
 
-  // Copy saved passwords AFTER bootstrap (so Chrome's generated Local State
+  // Copy user's browser profile AFTER bootstrap (so Chrome's generated Local State
   // doesn't overwrite our encryption key). Force-overwrite the os_crypt key.
-  copyUserPasswords(exe.path, userDataDir);
+  copyUserBrowserProfile(exe.path, userDataDir);
 
   const proc = spawnOnce();
   const readyDeadline = Date.now() + 15_000;

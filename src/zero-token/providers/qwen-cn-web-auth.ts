@@ -1,4 +1,5 @@
 import { chromium } from "playwright-core";
+import { BROWSER_STEALTH_SCRIPT } from "./browser-chrome.js";
 
 export interface QwenCNWebAuthResult {
   cookie: string;
@@ -25,6 +26,7 @@ export async function loginQwenCNWeb(params: {
 
     browser = await chromium.connectOverCDP(wsUrl);
     const context = browser.contexts()[0];
+    await context.addInitScript(BROWSER_STEALTH_SCRIPT);
 
     onProgress("Opening Qwen CN (qianwen.com)...");
 

@@ -114,32 +114,37 @@ export class ZWebClientBrowser {
     this.initialized = true;
   }
 
-  private async refreshAccessToken(): Promise<void> {
-    const cookieToken = this.getAccessTokenFromCookie();
-    if (cookieToken) {
-      this.accessToken = cookieToken;
-      console.log("[Z Web Browser] Using chatglm_token from cookies");
-      return;
-    }
+  private tokenRefreshedViaApi = false;
 
-    // Also try to get token from browser cookies
-    if (this.context) {
-      try {
-        const browserCookies = await this.context.cookies(["https://chatglm.cn"]);
-        const browserToken = browserCookies.find((c) => c.name === "chatglm_token");
-        if (browserToken?.value) {
-          this.accessToken = browserToken.value;
-          console.log("[Z Web Browser] Using chatglm_token from browser cookies");
-          return;
+  private async refreshAccessToken(forceApi = false): Promise<void> {
+    // Only use cookie token on first call and if not forced to use API
+    if (!forceApi && !this.tokenRefreshedViaApi) {
+      const cookieToken = this.getAccessTokenFromCookie();
+      if (cookieToken) {
+        this.accessToken = cookieToken;
+        console.log("[Z Web Browser] Using chatglm_token from cookies");
+        return;
+      }
+
+      // Also try to get token from browser cookies
+      if (this.context) {
+        try {
+          const browserCookies = await this.context.cookies(["https://chatglm.cn"]);
+          const browserToken = browserCookies.find((c) => c.name === "chatglm_token");
+          if (browserToken?.value) {
+            this.accessToken = browserToken.value;
+            console.log("[Z Web Browser] Using chatglm_token from browser cookies");
+            return;
+          }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
       }
     }
 
     const refreshToken = this.getRefreshToken();
     if (!refreshToken || !this.page) {
-      console.warn("[Z Web Browser] No chatglm_token found, will rely on browser cookies for auth");
+      console.warn("[Z Web Browser] No refresh token available, cannot refresh access token");
       return;
     }
 
@@ -191,7 +196,8 @@ export class ZWebClientBrowser {
 
     if (result.ok && result.accessToken) {
       this.accessToken = result.accessToken;
-      console.log("[Z Web Browser] Access token refreshed successfully");
+      this.tokenRefreshedViaApi = true;
+      console.log("[Z Web Browser] Access token refreshed successfully via API");
     } else {
       console.warn(`[Z Web Browser] Failed to refresh access token: ${result.error}`);
     }
@@ -364,6 +370,71 @@ export class ZWebClientBrowser {
     console.log(
       `[Z Web Browser] Response: ${responseData.chunkCount} chunks, ${responseData.data?.length || 0} bytes`,
     );
+
+    // Log short responses for debugging (likely errors or empty)
+    if (responseData.data && responseData.data.length < 500) {
+      console.log(`[Z Web Browser] Response content: ${responseData.data}`);
+    }
+
+    // If response is suspiciously short, it might be an auth error — retry once with refreshed token
+    if (responseData.data && responseData.data.length < 200) {
+      console.log("[Z Web Browser] Very short response, force-refreshing token via API and retrying...");
+      this.accessToken = null;
+      await this.refreshAccessToken(true);
+
+      if (this.accessToken) {
+        const retrySign = generateSign();
+        const retryRequestId = crypto.randomUUID().replace(/-/g, "");
+        const retryBody = { ...body };
+
+        const retryData = await this.page!.evaluate(
+          async ({ accessToken, bodyStr, deviceId, requestId, timeoutMs, sign, xExpGroups }) => {
+            try {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), timeoutMs);
+              const headers: Record<string, string> = {
+                "Content-Type": "application/json",
+                Accept: "text/event-stream",
+                "App-Name": "chatglm",
+                Origin: "https://chatglm.cn",
+                "X-App-Platform": "pc",
+                "X-App-Version": "0.0.1",
+                "X-App-fr": "default",
+                "X-Device-Brand": "",
+                "X-Device-Id": deviceId,
+                "X-Device-Model": "",
+                "X-Exp-Groups": xExpGroups,
+                "X-Lang": "zh",
+                "X-Nonce": sign.nonce,
+                "X-Request-Id": requestId,
+                "X-Sign": sign.sign,
+                "X-Timestamp": sign.timestamp,
+              };
+              if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+              const res = await fetch("https://chatglm.cn/chatglm/backend-api/assistant/stream", {
+                method: "POST", headers, credentials: "include", body: bodyStr, signal: controller.signal,
+              });
+              clearTimeout(timer);
+              if (!res.ok) return { ok: false, status: res.status, error: (await res.text()).substring(0, 500) };
+              const reader = res.body?.getReader();
+              if (!reader) return { ok: false, status: 500, error: "No response body" };
+              const decoder = new TextDecoder();
+              let fullText = ""; let chunkCount = 0;
+              while (true) { const { done, value } = await reader.read(); if (done) break; fullText += decoder.decode(value, { stream: true }); chunkCount++; }
+              return { ok: true, data: fullText, chunkCount };
+            } catch (err) { return { ok: false, status: 500, error: String(err) }; }
+          },
+          { accessToken: this.accessToken, bodyStr: JSON.stringify(retryBody), deviceId: this.deviceId, requestId: retryRequestId, timeoutMs: fetchTimeoutMs, sign: retrySign, xExpGroups: X_EXP_GROUPS },
+        );
+
+        if (retryData?.ok && retryData.data && retryData.data.length > 200) {
+          console.log(`[Z Web Browser] Retry succeeded: ${retryData.chunkCount} chunks, ${retryData.data.length} bytes`);
+          const encoder = new TextEncoder();
+          return new ReadableStream({ start(controller) { controller.enqueue(encoder.encode(retryData.data)); controller.close(); } });
+        }
+        console.log(`[Z Web Browser] Retry also short: ${retryData?.data?.length || 0} bytes`);
+      }
+    }
 
     const encoder = new TextEncoder();
     return new ReadableStream({

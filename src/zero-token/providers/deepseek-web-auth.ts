@@ -4,6 +4,7 @@ import {
   launchOpenClawChrome,
   stopOpenClawChrome,
   getChromeWebSocketUrl,
+  BROWSER_STEALTH_SCRIPT,
 } from "./browser-chrome.js";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
 
@@ -47,6 +48,7 @@ export async function loginDeepseekWebAttachOnly(params: {
       headers: getHeadersWithAuth(wsUrl),
     });
     context = browser.contexts()[0] || (await browser.newContext());
+    await context.addInitScript(BROWSER_STEALTH_SCRIPT);
 
     // 查找是否已经有打开的 DeepSeek 页面
     const existingPages = context.pages();
@@ -313,6 +315,7 @@ export async function loginDeepseekWeb(params: {
       headers: getHeadersWithAuth(wsUrl),
     });
     const context = browser.contexts()[0] || (await browser.newContext());
+    await context.addInitScript(BROWSER_STEALTH_SCRIPT);
     // 查找是否已经有打开的 DeepSeek 页面
     const existingPages = context.pages();
     let page = existingPages.find(

@@ -35,7 +35,6 @@ echo    Claude      (claude.ai)
 echo    Gemini      (gemini.google.com)
 echo    Grok        (grok.com)
 echo    Kimi        (www.kimi.com)
-echo    智谱 GLM    (chatglm.cn)
 echo    Perplexity  (www.perplexity.ai)
 echo.
 

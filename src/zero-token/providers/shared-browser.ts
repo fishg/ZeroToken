@@ -1,21 +1,80 @@
 /**
  * Shared browser instance manager for API calls.
- * Launches a completely separate hidden Chrome process (via Playwright)
- * so it does NOT conflict with OpenClaw's browser tool.
  *
- * OpenClaw's browser tool uses its own browser via CDP profile ports.
- * This API browser is independent — hidden, off-screen, different port.
+ * Three key techniques for persistent login:
+ *
+ * 1. Persistent User Data Directory (UDD)
+ *    - Fixed path at ~/.openclaw/browser/api-chrome/
+ *    - Cookies, LocalStorage, IndexedDB survive across restarts
+ *    - Google account sessions persist automatically
+ *
+ * 2. Persistent Context (launchPersistentContext)
+ *    - User data bound at launch time, not after
+ *    - OAuth popup windows share parent's storage in real-time
+ *    - Credentials written to disk immediately, not just in-memory
+ *
+ * 3. Stealth / Anti-Fingerprinting
+ *    - navigator.webdriver = false
+ *    - AutomationControlled feature disabled
+ *    - Chrome.runtime spoofed to avoid detection
+ *    - Google/OpenAI won't force re-login due to "unsafe environment"
  */
 import { chromium } from "playwright-core";
-import type { Browser, BrowserContext, Page } from "playwright-core";
+import type { BrowserContext, Page } from "playwright-core";
+import * as path from "node:path";
+import * as fs from "node:fs";
 import { resolveZeroTokenBrowserRuntime } from "./browser-runtime.js";
+import { resolveStateDir } from "./config-paths.js";
 
-let sharedBrowser: Browser | null = null;
 let sharedContext: BrowserContext | null = null;
 let sharedRefCount = 0;
 
+/** Fixed persistent path for the API browser profile */
+function resolveApiBrowserDataDir(): string {
+  return path.join(resolveStateDir(), "browser", "api-chrome");
+}
+
+/** Stealth script injected into every page to hide automation markers */
+const STEALTH_SCRIPT = `
+  // 1. Hide navigator.webdriver
+  Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+  // 2. Spoof chrome.runtime to look like a real browser
+  if (!window.chrome) window.chrome = {};
+  if (!window.chrome.runtime) {
+    window.chrome.runtime = {
+      connect: function() {},
+      sendMessage: function() {},
+    };
+  }
+
+  // 3. Hide Playwright/Puppeteer stack traces from Error objects
+  const originalError = Error;
+  function PatchedError(...args) {
+    const err = new originalError(...args);
+    const stack = err.stack || '';
+    err.stack = stack.replace(/playwright|puppeteer|automation/gi, 'browser');
+    return err;
+  }
+  PatchedError.prototype = originalError.prototype;
+
+  // 4. Realistic plugins array (empty = bot fingerprint)
+  Object.defineProperty(navigator, 'plugins', {
+    get: () => [
+      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+      { name: 'Native Client', filename: 'internal-nacl-plugin' },
+    ],
+  });
+
+  // 5. Realistic languages
+  Object.defineProperty(navigator, 'languages', {
+    get: () => ['zh-CN', 'zh', 'en-US', 'en'],
+  });
+`;
+
 /**
- * Get or launch a shared hidden Chrome for API calls.
+ * Get or launch a shared hidden Chrome with persistent context for API calls.
  * This browser is completely separate from OpenClaw's browser tool.
  */
 export async function getSharedBrowser(providerLabel: string, targetUrl: string): Promise<{
@@ -23,54 +82,63 @@ export async function getSharedBrowser(providerLabel: string, targetUrl: string)
   page: Page;
   isNew: boolean;
 }> {
-  // Check if shared browser is still connected
-  if (sharedBrowser && !sharedBrowser.isConnected()) {
-    console.log(`[${providerLabel}] API Chrome connection lost, resetting...`);
-    sharedBrowser = null;
-    sharedContext = null;
+  // Check if context is still alive
+  if (sharedContext) {
+    try {
+      // Quick liveness check
+      sharedContext.pages();
+    } catch {
+      console.log(`[${providerLabel}] API Chrome context dead, resetting...`);
+      sharedContext = null;
+      sharedRefCount = 0;
+    }
   }
 
-  // Launch hidden Chrome if not already running
-  if (!sharedBrowser) {
+  // Launch persistent context if not running
+  if (!sharedContext) {
     const { browserConfig } = resolveZeroTokenBrowserRuntime();
     const executablePath = browserConfig.executablePath;
+    const userDataDir = resolveApiBrowserDataDir();
+    fs.mkdirSync(userDataDir, { recursive: true });
 
-    console.log(`[${providerLabel}] Launching hidden API Chrome...`);
+    console.log(`[${providerLabel}] Launching hidden API Chrome (persistent context)...`);
+    console.log(`[${providerLabel}] User data dir: ${userDataDir}`);
 
-    const launchArgs = [
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-background-networking",
-      "--disable-sync",
-      "--disable-translate",
-      "--hide-scrollbars",
-      "--mute-audio",
-      "--window-position=-32000,-32000",
-      "--window-size=1,1",
-    ];
-
-    sharedBrowser = await chromium.launch({
+    sharedContext = await chromium.launchPersistentContext(userDataDir, {
       executablePath: executablePath || undefined,
       headless: false,
-      args: launchArgs,
+      args: [
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-background-networking",
+        "--disable-translate",
+        "--hide-scrollbars",
+        "--mute-audio",
+        // ── Stealth: hide automation markers ──
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=AutomationControlled",
+        // ── Hidden window ──
+        "--window-position=-32000,-32000",
+        "--window-size=1,1",
+      ],
+      // Don't add Playwright's default "Headless" user-agent suffix
+      ignoreDefaultArgs: ["--enable-automation"],
+      bypassCSP: true,
     });
 
-    // Gracefully handle browser disconnect (e.g. crash)
-    sharedBrowser.on("disconnected", () => {
-      console.log(`[SharedBrowser] API Chrome disconnected, resetting`);
-      sharedBrowser = null;
+    // Inject stealth script into all pages (current and future)
+    await sharedContext.addInitScript(STEALTH_SCRIPT);
+
+    // Handle context close
+    sharedContext.on("close", () => {
+      console.log(`[SharedBrowser] API Chrome context closed`);
       sharedContext = null;
       sharedRefCount = 0;
     });
 
-    sharedContext = sharedBrowser.contexts()[0] ?? await sharedBrowser.newContext();
-    console.log(`[${providerLabel}] Hidden API Chrome launched`);
+    console.log(`[${providerLabel}] Hidden API Chrome launched (persistent)`);
   } else {
     console.log(`[${providerLabel}] Reusing hidden API Chrome`);
-  }
-
-  if (!sharedContext) {
-    sharedContext = await sharedBrowser.newContext();
   }
 
   sharedRefCount++;
@@ -98,14 +166,13 @@ export async function getSharedBrowser(providerLabel: string, targetUrl: string)
  */
 export async function releaseSharedBrowser() {
   sharedRefCount = Math.max(0, sharedRefCount - 1);
-  if (sharedRefCount === 0 && sharedBrowser) {
+  if (sharedRefCount === 0 && sharedContext) {
     console.log(`[SharedBrowser] All providers released, closing API Chrome`);
     try {
-      await sharedBrowser.close();
+      await sharedContext.close();
     } catch {
       // already closed
     }
-    sharedBrowser = null;
     sharedContext = null;
   }
 }

@@ -10,8 +10,6 @@
     "kimi-web",
     "gemini-web",
     "grok-web",
-    "glm-web",
-    "glm-intl-web",
     "perplexity-web"
   ],
   "configSchema": {
