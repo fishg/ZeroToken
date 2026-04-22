@@ -6,7 +6,38 @@ Standalone OpenClaw plugin that exposes browser-authenticated web providers with
 
 This repository is self-contained. The built `dist/` bundle is committed, so you can install it directly after cloning.
 
-### macOS / Linux
+### macOS
+
+After cloning, the recommended zero-prerequisite path on macOS is:
+
+```bash
+git clone https://github.com/wangedoo518/ZeroToken.git
+cd ZeroToken
+chmod +x Zero-Token.command
+./Zero-Token.command
+```
+
+`Zero-Token.command` can automatically:
+
+- install Homebrew if it is missing
+- install Node.js 22 if it is missing
+- launch the macOS setup flow
+
+If Node.js 22 is already installed, you can also run:
+
+```bash
+npm run mac
+```
+
+The macOS launcher will:
+
+- install a local OpenClaw runtime under `.zero-token-runtime/`
+- install the plugin into OpenClaw
+- patch the local OpenClaw `api-registry.js`
+- offer to install Chrome / Edge / Brave / Chromium automatically if none is found
+- let you pick a browser, log in to providers, and start the gateway
+
+### Linux
 
 ```bash
 git clone https://github.com/wangedoo518/ZeroToken.git

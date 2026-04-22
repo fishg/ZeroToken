@@ -13,7 +13,8 @@
     "package.json"
   ],
   "scripts": {
-    "build": "node ./build.mjs"
+    "build": "node ./build.mjs",
+    "mac": "node ./Zero-Token-mac.mjs"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "0.57.1",
