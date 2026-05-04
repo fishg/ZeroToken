@@ -2,6 +2,19 @@
 
 Standalone OpenClaw plugin that exposes browser-authenticated web providers without standard API keys.
 
+## Before you install
+
+Current OpenClaw builds may block local plugin installs when a plugin contains
+browser-launch or `child_process` code. ZeroToken falls into that bucket, so
+manual local installs should use:
+
+```bash
+openclaw plugins install . --dangerously-force-unsafe-install
+```
+
+If you use `plugins.allow`, add `"zero-token"` there as an explicitly trusted
+plugin ID.
+
 ## Install on another machine
 
 This repository is self-contained. The built `dist/` bundle is committed, so you can install it directly after cloning.
@@ -41,8 +54,9 @@ The macOS launcher will:
 ```bash
 git clone https://github.com/wangedoo518/ZeroToken.git
 cd ZeroToken
-openclaw plugins install .
-openclaw models auth login --provider deepseek-web --set-default
+openclaw plugins install . --dangerously-force-unsafe-install
+openclaw gateway restart
+openclaw models auth login --provider deepseek-web --method browser-login --set-default
 ```
 
 ### Windows PowerShell
@@ -50,8 +64,9 @@ openclaw models auth login --provider deepseek-web --set-default
 ```powershell
 git clone https://github.com/wangedoo518/ZeroToken.git
 cd ZeroToken
-openclaw plugins install .
-openclaw models auth login --provider deepseek-web --set-default
+openclaw plugins install . --dangerously-force-unsafe-install
+openclaw gateway restart
+openclaw models auth login --provider deepseek-web --method browser-login --set-default
 ```
 
 If you modify source files, rebuild before reinstalling:
@@ -59,8 +74,18 @@ If you modify source files, rebuild before reinstalling:
 ```bash
 npm install
 npm run build
-openclaw plugins install .
+openclaw plugins install . --force --dangerously-force-unsafe-install
+openclaw gateway restart
 ```
+
+After installation, verify that OpenClaw loaded the plugin:
+
+```bash
+openclaw plugins inspect zero-token --runtime --json
+```
+
+To log into a different provider, swap `deepseek-web` for any provider ID from
+the supported list below.
 
 ## Supported providers
 
@@ -76,7 +101,6 @@ openclaw plugins install .
 - `perplexity-web`
 - `qwen-cn-web`
 - `qwen-web`
-- `xiaomimo-web`
 
 ## Notes
 

@@ -585,7 +585,7 @@ async function installOrUpdatePlugin({ firstRun = false } = {}) {
   printBanner();
   console.log("  Installing Zero-Token into the local OpenClaw runtime...");
   console.log("");
-  await runOpenClaw(["plugins", "install", "."]);
+  await runOpenClaw(["plugins", "install", ".", "--dangerously-force-unsafe-install"]);
   console.log("");
   console.log("  [ok] Zero-Token is ready.");
 }

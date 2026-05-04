@@ -1547,7 +1547,7 @@ var GROK_WEB_DEFAULT_COST = {
   cacheWrite: 0
 };
 var Z_WEB_BASE_URL = "https://chatglm.cn";
-var Z_WEB_DEFAULT_MODEL_ID = "glm-4-plus";
+var Z_WEB_DEFAULT_MODEL_ID = "glm-5-plus";
 var Z_WEB_DEFAULT_CONTEXT_WINDOW = 128e3;
 var Z_WEB_DEFAULT_MAX_TOKENS = 4096;
 var Z_WEB_DEFAULT_COST = {
@@ -1557,7 +1557,7 @@ var Z_WEB_DEFAULT_COST = {
   cacheWrite: 0
 };
 var GLM_INTL_WEB_BASE_URL = "https://chat.z.ai";
-var GLM_INTL_WEB_DEFAULT_MODEL_ID = "glm-4-plus";
+var GLM_INTL_WEB_DEFAULT_MODEL_ID = "glm-5-plus";
 var GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW = 128e3;
 var GLM_INTL_WEB_DEFAULT_MAX_TOKENS = 4096;
 var GLM_INTL_WEB_DEFAULT_COST = {
@@ -1578,7 +1578,7 @@ async function discoverDeepseekWebModels(_params) {
   return [
     {
       id: "deepseek-chat",
-      name: "DeepSeek V3",
+      name: "DeepSeek V4",
       reasoning: false,
       input: ["text"],
       cost: DEEPSEEK_WEB_DEFAULT_COST,
@@ -1829,8 +1829,8 @@ async function buildZWebProvider(_params) {
     api: "openai-completions",
     models: [
       {
-        id: "glm-4-plus",
-        name: "glm-4 Plus (Web)",
+        id: "glm-5-plus",
+        name: "glm-5 Plus (Web)",
         reasoning: false,
         input: ["text"],
         cost: Z_WEB_DEFAULT_COST,
@@ -1838,8 +1838,8 @@ async function buildZWebProvider(_params) {
         maxTokens: Z_WEB_DEFAULT_MAX_TOKENS
       },
       {
-        id: "glm-4-think",
-        name: "glm-4 Think (Web)",
+        id: "glm-5-think",
+        name: "glm-5 Think (Web)",
         reasoning: true,
         input: ["text"],
         cost: Z_WEB_DEFAULT_COST,
@@ -1855,8 +1855,8 @@ async function buildGlmIntlWebProvider(_params) {
     api: "openai-completions",
     models: [
       {
-        id: "glm-4-plus",
-        name: "GLM-4 Plus (International)",
+        id: "glm-5-plus",
+        name: "glm-5 Plus (International)",
         reasoning: false,
         input: ["text"],
         cost: GLM_INTL_WEB_DEFAULT_COST,
@@ -1864,8 +1864,8 @@ async function buildGlmIntlWebProvider(_params) {
         maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS
       },
       {
-        id: "glm-4-think",
-        name: "GLM-4 Think (International)",
+        id: "glm-5-think",
+        name: "glm-5 Think (International)",
         reasoning: true,
         input: ["text"],
         cost: GLM_INTL_WEB_DEFAULT_COST,
@@ -5905,7 +5905,7 @@ var DeepSeekWebClient = class {
     const baseModels = [
       {
         id: "deepseek-chat",
-        name: "DeepSeek V3",
+        name: "DeepSeek V4",
         reasoning: false,
         input: ["text"],
         cost: {
@@ -8737,10 +8737,10 @@ import {
 init_shared_browser();
 import crypto7 from "node:crypto";
 var ASSISTANT_ID_MAP = {
-  "glm-4-plus": "65940acff94777010aa6b796",
-  "glm-4": "65940acff94777010aa6b796",
-  "glm-4-think": "676411c38945bbc58a905d31",
-  "glm-4-zero": "676411c38945bbc58a905d31"
+  "glm-5-plus": "65940acff94777010aa6b796",
+  "glm-5": "65940acff94777010aa6b796",
+  "glm-5-think": "676411c38945bbc58a905d31",
+  "glm-5-zero": "676411c38945bbc58a905d31"
 };
 var DEFAULT_ASSISTANT_ID = "65940acff94777010aa6b796";
 var SIGN_SECRET2 = "8a1317a7468aa3ad86e997d08f3f31cb";
