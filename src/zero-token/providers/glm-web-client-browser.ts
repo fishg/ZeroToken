@@ -13,10 +13,10 @@ export interface ZWebClientOptions {
 
 /** Model ID -> ChatGLM assistant_id mapping */
 const ASSISTANT_ID_MAP: Record<string, string> = {
-  "glm-4-plus": "65940acff94777010aa6b796",
-  "glm-4": "65940acff94777010aa6b796",
-  "glm-4-think": "676411c38945bbc58a905d31",
-  "glm-4-zero": "676411c38945bbc58a905d31",
+  "glm-5-plus": "65940acff94777010aa6b796",
+  "glm-5": "65940acff94777010aa6b796",
+  "glm-5-think": "676411c38945bbc58a905d31",
+  "glm-5-zero": "676411c38945bbc58a905d31",
 };
 const DEFAULT_ASSISTANT_ID = "65940acff94777010aa6b796";
 

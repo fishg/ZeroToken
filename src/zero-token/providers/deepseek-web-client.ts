@@ -397,7 +397,7 @@ export class DeepSeekWebClient {
     const baseModels: ModelDefinitionConfig[] = [
       {
         id: "deepseek-chat",
-        name: "DeepSeek V3",
+        name: "DeepSeek V4",
         reasoning: false,
         input: ["text"],
         cost: {

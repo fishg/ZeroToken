@@ -112,7 +112,7 @@ const GROK_WEB_DEFAULT_COST = {
 };
 
 export const Z_WEB_BASE_URL = "https://chatglm.cn";
-export const Z_WEB_DEFAULT_MODEL_ID = "glm-4-plus";
+export const Z_WEB_DEFAULT_MODEL_ID = "glm-5-plus";
 const Z_WEB_DEFAULT_CONTEXT_WINDOW = 128000;
 const Z_WEB_DEFAULT_MAX_TOKENS = 4096;
 const Z_WEB_DEFAULT_COST = {
@@ -123,7 +123,7 @@ const Z_WEB_DEFAULT_COST = {
 };
 
 export const GLM_INTL_WEB_BASE_URL = "https://chat.z.ai";
-export const GLM_INTL_WEB_DEFAULT_MODEL_ID = "glm-4-plus";
+export const GLM_INTL_WEB_DEFAULT_MODEL_ID = "glm-5-plus";
 const GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW = 128000;
 const GLM_INTL_WEB_DEFAULT_MAX_TOKENS = 4096;
 const GLM_INTL_WEB_DEFAULT_COST = {
@@ -152,7 +152,7 @@ export async function discoverDeepseekWebModels(_params?: {
   return [
     {
       id: "deepseek-chat",
-      name: "DeepSeek V3",
+      name: "DeepSeek V4",
       reasoning: false,
       input: ["text"],
       cost: DEEPSEEK_WEB_DEFAULT_COST,
@@ -453,8 +453,8 @@ export async function buildZWebProvider(_params?: {
     api: "openai-completions",
     models: [
       {
-        id: "glm-4-plus",
-        name: "glm-4 Plus (Web)",
+        id: "glm-5",
+        name: "glm-5 (Web)",
         reasoning: false,
         input: ["text"],
         cost: Z_WEB_DEFAULT_COST,
@@ -462,8 +462,8 @@ export async function buildZWebProvider(_params?: {
         maxTokens: Z_WEB_DEFAULT_MAX_TOKENS,
         },
       {
-        id: "glm-4-think",
-        name: "glm-4 Think (Web)",
+        id: "glm-5-think",
+        name: "glm-5 Think (Web)",
         reasoning: true,
         input: ["text"],
         cost: Z_WEB_DEFAULT_COST,
@@ -483,8 +483,8 @@ export async function buildGlmIntlWebProvider(_params?: {
     api: "openai-completions",
     models: [
       {
-        id: "glm-4-plus",
-        name: "GLM-4 Plus (International)",
+        id: "glm-5",
+        name: "glm-5 (International)",
         reasoning: false,
         input: ["text"],
         cost: GLM_INTL_WEB_DEFAULT_COST,
@@ -492,8 +492,8 @@ export async function buildGlmIntlWebProvider(_params?: {
         maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS,
         },
       {
-        id: "glm-4-think",
-        name: "GLM-4 Think (International)",
+        id: "glm-5-think",
+        name: "glm-5 Think (International)",
         reasoning: true,
         input: ["text"],
         cost: GLM_INTL_WEB_DEFAULT_COST,
