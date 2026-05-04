@@ -166,7 +166,7 @@ function Do-Install {
         return $false
     }
 
-    # ── Step 3/5: 部署插件 ──
+    # ── Step 3/4: 部署插件 ──
     Draw-ProgressBar 55 "部署插件..."
     $extDir = Join-Path $env:USERPROFILE ".openclaw\extensions\zero-token"
     $extDist = Join-Path $extDir "dist"
@@ -175,16 +175,10 @@ function Do-Install {
     Copy-Item (Join-Path $projectDir "package.json") $extDir -Force
     Copy-Item (Join-Path $projectDir "openclaw.plugin.json") $extDir -Force
 
-    # ── Step 4/5: 安装插件运行时依赖 ──
+    # ── Step 4/4: 安装插件运行时依赖 ──
     Draw-ProgressBar 70 "安装插件运行时依赖..."
     Push-Location $extDir
     & npm install --omit=dev --silent 2>&1 | Out-Null
-    Pop-Location
-
-    # ── Step 5/5: 打补丁 ──
-    Draw-ProgressBar 90 "打补丁..."
-    Push-Location $projectDir
-    & node patch-registry.js 2>&1 | Out-Null
     Pop-Location
 
     Draw-ProgressBar 100 "完成"

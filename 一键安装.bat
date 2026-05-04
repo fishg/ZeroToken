@@ -98,17 +98,6 @@ if exist "node_modules" (
     exit /b 1
 )
 
-:: ── Step 5: 打补丁 ──
-echo  [5/5] 打补丁 (globalThis registry)...
-cd /d "%~dp0"
-call node patch-registry.js
-if %errorlevel% neq 0 (
-    color 0C
-    echo  [x] 补丁失败，请检查 OpenClaw 安装
-    pause
-    exit /b 1
-)
-
 :: ── 完成 ──
 echo.
 color 0A

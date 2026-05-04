@@ -15,7 +15,7 @@ async function buildWithImportedEsbuild() {
     target: "node22",
     packages: "external",
     outfile: "dist/index.js",
-    external: ["openclaw/plugin-sdk/core"],
+    external: ["openclaw/plugin-sdk", "openclaw/plugin-sdk/*"],
   });
 }
 
@@ -39,7 +39,8 @@ function buildWithPnpmStoreFallback() {
       "--target=node22",
       "--packages=external",
       "--outfile=dist/index.js",
-      "--external:openclaw/plugin-sdk/core",
+      "--external:openclaw/plugin-sdk",
+      "--external:openclaw/plugin-sdk/*",
     ],
     {
       cwd: process.cwd(),

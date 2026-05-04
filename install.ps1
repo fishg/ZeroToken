@@ -2,7 +2,7 @@
 .SYNOPSIS
     Zero-Token 插件一键安装脚本
 .DESCRIPTION
-    自动构建、部署 Zero-Token 插件到 OpenClaw，并打补丁让拦截器生效。
+    自动构建、部署 Zero-Token 插件到 OpenClaw。
     需要在 PowerShell 中以普通用户权限运行即可。
 .USAGE
     在 ZeroToken 项目根目录下运行:
@@ -22,28 +22,6 @@ $ProjectDir   = $PSScriptRoot
 $ExtDir       = Join-Path $env:USERPROFILE ".openclaw\extensions\zero-token"
 $ExtDistDir   = Join-Path $ExtDir "dist"
 
-# 查找 OpenClaw 安装目录 (支持不同版本的 clawhub 目录名)
-$ClawHubBase  = Join-Path $env:LOCALAPPDATA ".clawhub123"
-if (-not (Test-Path $ClawHubBase)) {
-    # 尝试其他可能的目录名
-    $candidates = Get-ChildItem $env:LOCALAPPDATA -Directory -Filter ".clawhub*" -ErrorAction SilentlyContinue
-    if ($candidates) {
-        $ClawHubBase = $candidates[0].FullName
-    } else {
-        Write-Fail "找不到 OpenClaw 安装目录 (.clawhub* in $env:LOCALAPPDATA)"
-        exit 1
-    }
-}
-
-# 查找 npm-global 目录
-$NpmGlobal = Get-ChildItem $ClawHubBase -Directory -Filter "npm-global-*" -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $NpmGlobal) {
-    Write-Fail "找不到 npm-global 目录 in $ClawHubBase"
-    exit 1
-}
-
-$RegistryFile = Join-Path $NpmGlobal.FullName "node_modules\openclaw\node_modules\@mariozechner\pi-ai\dist\api-registry.js"
-
 Write-Host ""
 Write-Host "============================================" -ForegroundColor White
 Write-Host "   Zero-Token 插件安装器" -ForegroundColor White
@@ -51,7 +29,6 @@ Write-Host "============================================" -ForegroundColor White
 Write-Host ""
 Write-Host "  项目目录:    $ProjectDir"
 Write-Host "  插件目录:    $ExtDir"
-Write-Host "  OpenClaw:    $($NpmGlobal.FullName)"
 Write-Host ""
 
 # ── Step 1: 安装依赖 ──
@@ -106,33 +83,6 @@ try {
     Write-Warn "插件依赖安装失败 (可能不影响): $_"
 }
 Pop-Location
-
-# ── Step 5: 打补丁 (关键!) ──
-Write-Step "打补丁: 修改 api-registry.js 共享全局 registry..."
-
-if (-not (Test-Path $RegistryFile)) {
-    Write-Fail "找不到 api-registry.js: $RegistryFile"
-    exit 1
-}
-
-$content = Get-Content $RegistryFile -Raw -Encoding UTF8
-
-$originalLine   = "const apiProviderRegistry = new Map();"
-$patchedLine    = "const apiProviderRegistry = globalThis.__piAiApiProviderRegistry ?? (globalThis.__piAiApiProviderRegistry = new Map());"
-
-if ($content.Contains($patchedLine)) {
-    Write-OK "补丁已存在，无需重复打"
-} elseif ($content.Contains($originalLine)) {
-    $content = $content.Replace($originalLine, $patchedLine)
-    # 使用 UTF8 无 BOM 写入
-    [System.IO.File]::WriteAllText($RegistryFile, $content, [System.Text.UTF8Encoding]::new($false))
-    Write-OK "补丁已成功应用"
-} else {
-    Write-Warn "api-registry.js 内容不匹配预期，可能已被修改过"
-    Write-Warn "请手动检查: $RegistryFile"
-    Write-Warn "确保第一行为:"
-    Write-Warn "  $patchedLine"
-}
 
 # ── 完成 ──
 Write-Host ""

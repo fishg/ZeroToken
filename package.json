@@ -17,11 +17,11 @@
     "mac": "node ./Zero-Token-mac.mjs"
   },
   "dependencies": {
-    "@mariozechner/pi-agent-core": "0.57.1",
-    "@mariozechner/pi-ai": "0.57.1",
+    "@mariozechner/pi-agent-core": "0.71.1",
+    "@mariozechner/pi-ai": "0.71.1",
     "json5": "2.2.3",
     "playwright-core": "1.58.2",
-    "ws": "8.19.0"
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "esbuild": "0.25.9"
@@ -30,16 +30,30 @@
     "node": ">=22"
   },
   "openclaw": {
+    "providers": [
+      "chatgpt-web",
+      "claude-web",
+      "deepseek-web",
+      "doubao-web",
+      "gemini-web",
+      "glm-intl-web",
+      "glm-web",
+      "grok-web",
+      "kimi-web",
+      "perplexity-web",
+      "qwen-cn-web",
+      "qwen-web"
+    ],
     "extensions": [
       "./dist/index.js"
     ],
     "compat": {
-      "pluginApi": ">=0.57.1",
-      "minGatewayVersion": "0.57.1"
+      "pluginApi": ">=2026.5.3",
+      "minGatewayVersion": "2026.5.3"
     },
     "build": {
-      "openclawVersion": "0.57.1",
-      "pluginSdkVersion": "0.57.1"
+      "openclawVersion": "2026.5.3",
+      "pluginSdkVersion": "2026.5.3"
     },
     "install": {
       "localPath": ".",

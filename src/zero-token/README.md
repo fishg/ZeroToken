@@ -11,4 +11,4 @@ This directory contains the standalone browser-authenticated provider implementa
 ## Portability notes
 
 - All imports in this tree are local to this repository so the plugin can be cloned and installed on another machine without the original monorepo.
-- Runtime integration with OpenClaw happens only through the public `openclaw/plugin-sdk/core` surface exposed from `src/index.ts`.
+- Runtime integration with OpenClaw happens only through public `openclaw/plugin-sdk/*` entrypoints exposed from `src/index.ts`.

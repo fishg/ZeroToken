@@ -1470,11 +1470,10 @@ var init_claude_web_client_browser = __esm({
 });
 
 // src/index.ts
-import { execSync as execSync2 } from "node:child_process";
-import * as fs7 from "node:fs";
-import * as os5 from "node:os";
-import * as path7 from "node:path";
-import { registerApiProvider, getApiProvider } from "@mariozechner/pi-ai";
+import {
+  definePluginEntry
+} from "openclaw/plugin-sdk/plugin-entry";
+import { buildApiKeyCredential } from "openclaw/plugin-sdk/provider-auth";
 
 // src/zero-token/bridge/web-providers.ts
 var DEEPSEEK_WEB_BASE_URL = "https://chat.deepseek.com";
@@ -1542,6 +1541,26 @@ var GROK_WEB_DEFAULT_MODEL_ID = "grok-2";
 var GROK_WEB_DEFAULT_CONTEXT_WINDOW = 32e3;
 var GROK_WEB_DEFAULT_MAX_TOKENS = 4096;
 var GROK_WEB_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0
+};
+var Z_WEB_BASE_URL = "https://chatglm.cn";
+var Z_WEB_DEFAULT_MODEL_ID = "glm-4-plus";
+var Z_WEB_DEFAULT_CONTEXT_WINDOW = 128e3;
+var Z_WEB_DEFAULT_MAX_TOKENS = 4096;
+var Z_WEB_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0
+};
+var GLM_INTL_WEB_BASE_URL = "https://chat.z.ai";
+var GLM_INTL_WEB_DEFAULT_MODEL_ID = "glm-4-plus";
+var GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW = 128e3;
+var GLM_INTL_WEB_DEFAULT_MAX_TOKENS = 4096;
+var GLM_INTL_WEB_DEFAULT_COST = {
   input: 0,
   output: 0,
   cacheRead: 0,
@@ -1800,6 +1819,58 @@ async function buildGrokWebProvider(_params) {
         cost: GROK_WEB_DEFAULT_COST,
         contextWindow: GROK_WEB_DEFAULT_CONTEXT_WINDOW,
         maxTokens: GROK_WEB_DEFAULT_MAX_TOKENS
+      }
+    ]
+  };
+}
+async function buildZWebProvider(_params) {
+  return {
+    baseUrl: Z_WEB_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: "glm-4-plus",
+        name: "glm-4 Plus (Web)",
+        reasoning: false,
+        input: ["text"],
+        cost: Z_WEB_DEFAULT_COST,
+        contextWindow: Z_WEB_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: Z_WEB_DEFAULT_MAX_TOKENS
+      },
+      {
+        id: "glm-4-think",
+        name: "glm-4 Think (Web)",
+        reasoning: true,
+        input: ["text"],
+        cost: Z_WEB_DEFAULT_COST,
+        contextWindow: Z_WEB_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: Z_WEB_DEFAULT_MAX_TOKENS
+      }
+    ]
+  };
+}
+async function buildGlmIntlWebProvider(_params) {
+  return {
+    baseUrl: GLM_INTL_WEB_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: "glm-4-plus",
+        name: "GLM-4 Plus (International)",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_INTL_WEB_DEFAULT_COST,
+        contextWindow: GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS
+      },
+      {
+        id: "glm-4-think",
+        name: "GLM-4 Think (International)",
+        reasoning: true,
+        input: ["text"],
+        cost: GLM_INTL_WEB_DEFAULT_COST,
+        contextWindow: GLM_INTL_WEB_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_INTL_WEB_DEFAULT_MAX_TOKENS
       }
     ]
   };
@@ -3594,12 +3665,12 @@ async function loginGeminiWeb(options = {}) {
   }
 }
 
-// src/zero-token/providers/grok-web-auth.ts
+// src/zero-token/providers/glm-intl-web-auth.ts
 init_browser_cdp();
 import { chromium as chromium7 } from "playwright-core";
 init_browser_runtime();
-async function loginGrokWeb(options = {}) {
-  const { onProgress = console.log, headless = false } = options;
+async function loginGlmIntlWeb(options = {}) {
+  const { onProgress = console.log } = options;
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
   let running;
   let didLaunch = false;
@@ -3636,6 +3707,101 @@ async function loginGrokWeb(options = {}) {
       headers: getHeadersWithAuth(wsUrl)
     });
     const context = browser.contexts()[0];
+    const page = context.pages()[0] || await context.newPage();
+    onProgress("Navigating to GLM International (chat.z.ai)...");
+    await page.goto("https://chat.z.ai/", { waitUntil: "domcontentloaded", timeout: 12e4 });
+    const userAgent = await page.evaluate(() => navigator.userAgent);
+    onProgress("Please login to GLM International (chat.z.ai) in the opened browser window...");
+    onProgress("Waiting for authentication (checking for login cookies or page change)...");
+    try {
+      await page.waitForFunction(
+        () => {
+          const cookieStr = document.cookie;
+          const currentUrl = window.location.href;
+          const hasAuthCookie = cookieStr.includes("chatglm_refresh_token") || cookieStr.includes("refresh_token") || cookieStr.includes("auth_token") || cookieStr.includes("access_token") || cookieStr.includes("session") || cookieStr.includes("token");
+          const isLoggedInUrl = currentUrl.includes("chat") || currentUrl.includes("conversation") || currentUrl.includes("dashboard") || !currentUrl.includes("login") && !currentUrl.includes("auth");
+          const hasChatElements = document.querySelector(
+            'textarea, [contenteditable="true"], .chat-input, .message-input'
+          ) !== null;
+          return hasAuthCookie || isLoggedInUrl && hasChatElements;
+        },
+        { timeout: 6e5, polling: 1e3 }
+        // 10 minutes, check every second
+      );
+      onProgress("Login detected via cookies or page state...");
+    } catch (error) {
+      onProgress(
+        `Login detection timed out or failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+      onProgress("Checking if we're already on a logged-in page...");
+      const currentUrl = await page.evaluate(() => window.location.href);
+      const cookies2 = await context.cookies("https://chat.z.ai");
+      const cookieNames = cookies2.map((c) => c.name).join(", ");
+      onProgress(`Current URL: ${currentUrl}`);
+      onProgress(`Available cookies: ${cookieNames}`);
+      if (cookies2.length > 0) {
+        onProgress("Proceeding with available cookies...");
+      } else {
+        throw new Error(
+          `Login timeout. Please ensure you've logged in to chat.z.ai in the browser window. Available cookies: ${cookieNames || "none"}`,
+          { cause: error }
+        );
+      }
+    }
+    onProgress("Capturing cookies...");
+    const cookies = await context.cookies("https://chat.z.ai");
+    const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    onProgress("Authentication captured successfully!");
+    return { cookie: cookieString, userAgent };
+  } finally {
+    if (didLaunch && running && "proc" in running) {
+      await stopOpenClawChrome(running);
+    }
+  }
+}
+
+// src/zero-token/providers/grok-web-auth.ts
+init_browser_cdp();
+import { chromium as chromium8 } from "playwright-core";
+init_browser_runtime();
+async function loginGrokWeb(options = {}) {
+  const { onProgress = console.log, headless = false } = options;
+  const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
+  let running;
+  let didLaunch = false;
+  if (browserConfig.attachOnly) {
+    onProgress("Connecting to existing Chrome (attach mode)...");
+    const wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 5e3);
+    if (!wsUrl) {
+      throw new Error(
+        `Failed to connect to Chrome at ${profile.cdpUrl}. Make sure Chrome is running in debug mode (./start-chrome-debug.sh)`
+      );
+    }
+    running = { cdpPort: profile.cdpPort };
+  } else {
+    onProgress("Launching browser...");
+    running = await launchOpenClawChrome(browserConfig, profile);
+    didLaunch = true;
+  }
+  try {
+    const cdpUrl = browserConfig.attachOnly ? profile.cdpUrl : `http://127.0.0.1:${running.cdpPort}`;
+    let wsUrl = null;
+    onProgress("Waiting for browser debugger...");
+    for (let i = 0; i < 10; i++) {
+      wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
+      if (wsUrl) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!wsUrl) {
+      throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl} after retries.`);
+    }
+    onProgress("Connecting to browser...");
+    const browser = await chromium8.connectOverCDP(wsUrl, {
+      headers: getHeadersWithAuth(wsUrl)
+    });
+    const context = browser.contexts()[0];
     await context.addInitScript(BROWSER_STEALTH_SCRIPT);
     const page = context.pages()[0] || await context.newPage();
     onProgress("Navigating to Grok...");
@@ -3663,7 +3829,7 @@ async function loginGrokWeb(options = {}) {
 
 // src/zero-token/providers/kimi-web-auth.ts
 init_browser_cdp();
-import { chromium as chromium8 } from "playwright-core";
+import { chromium as chromium9 } from "playwright-core";
 init_browser_runtime();
 async function loginKimiWeb(options = {}) {
   const { onProgress = console.log } = options;
@@ -3699,7 +3865,7 @@ async function loginKimiWeb(options = {}) {
       throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl} after retries.`);
     }
     onProgress("Connecting to browser...");
-    const browser = await chromium8.connectOverCDP(wsUrl, {
+    const browser = await chromium9.connectOverCDP(wsUrl, {
       headers: getHeadersWithAuth(wsUrl)
     });
     const context = browser.contexts()[0];
@@ -3742,7 +3908,7 @@ async function loginKimiWeb(options = {}) {
 
 // src/zero-token/providers/perplexity-web-auth.ts
 init_browser_cdp();
-import { chromium as chromium9 } from "playwright-core";
+import { chromium as chromium10 } from "playwright-core";
 init_browser_runtime();
 async function loginPerplexityWeb(options = {}) {
   const { onProgress = console.log, headless = false } = options;
@@ -3778,7 +3944,7 @@ async function loginPerplexityWeb(options = {}) {
       throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl} after retries.`);
     }
     onProgress("Connecting to browser...");
-    const browser = await chromium9.connectOverCDP(wsUrl, {
+    const browser = await chromium10.connectOverCDP(wsUrl, {
       headers: getHeadersWithAuth(wsUrl)
     });
     const context = browser.contexts()[0];
@@ -3811,7 +3977,7 @@ async function loginPerplexityWeb(options = {}) {
 }
 
 // src/zero-token/providers/qwen-cn-web-auth.ts
-import { chromium as chromium10 } from "playwright-core";
+import { chromium as chromium11 } from "playwright-core";
 async function loginQwenCNWeb(params) {
   const { onProgress } = params;
   onProgress("Connecting to Chrome debug port...");
@@ -3821,7 +3987,7 @@ async function loginQwenCNWeb(params) {
     const response = await fetch(`${cdpUrl}/json/version`);
     const versionInfo = await response.json();
     const wsUrl = versionInfo.webSocketDebuggerUrl;
-    browser = await chromium10.connectOverCDP(wsUrl);
+    browser = await chromium11.connectOverCDP(wsUrl);
     const context = browser.contexts()[0];
     await context.addInitScript(BROWSER_STEALTH_SCRIPT);
     onProgress("Opening Qwen CN (qianwen.com)...");
@@ -3887,7 +4053,7 @@ async function loginQwenCNWeb(params) {
 
 // src/zero-token/providers/qwen-web-auth.ts
 init_browser_cdp();
-import { chromium as chromium11 } from "playwright-core";
+import { chromium as chromium12 } from "playwright-core";
 init_browser_runtime();
 async function loginQwenWeb(params) {
   const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
@@ -3922,7 +4088,7 @@ async function loginQwenWeb(params) {
       throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl} after retries.`);
     }
     params.onProgress("Connecting to browser...");
-    const browser = await chromium11.connectOverCDP(wsUrl, {
+    const browser = await chromium12.connectOverCDP(wsUrl, {
       headers: getHeadersWithAuth(wsUrl),
       timeout: 6e4
       // 60s，Chrome 多标签或复杂页面时 CDP 握手可能较慢
@@ -4018,6 +4184,80 @@ async function loginQwenWeb(params) {
         }
       }, 2e3);
     });
+  } finally {
+    if (didLaunch && running && "proc" in running) {
+      await stopOpenClawChrome(running);
+    }
+  }
+}
+
+// src/zero-token/providers/glm-web-auth.ts
+init_browser_cdp();
+import { chromium as chromium13 } from "playwright-core";
+init_browser_runtime();
+async function loginZWeb(options = {}) {
+  const { onProgress = console.log } = options;
+  const { browserConfig, profile } = resolveZeroTokenBrowserRuntime();
+  let running;
+  let didLaunch = false;
+  if (browserConfig.attachOnly) {
+    onProgress("Connecting to existing Chrome (attach mode)...");
+    const wsUrl = await getChromeWebSocketUrl(profile.cdpUrl, 5e3);
+    if (!wsUrl) {
+      throw new Error(
+        `Failed to connect to Chrome at ${profile.cdpUrl}. Make sure Chrome is running in debug mode (./start-chrome-debug.sh)`
+      );
+    }
+    running = { cdpPort: profile.cdpPort };
+  } else {
+    onProgress("Launching browser...");
+    running = await launchOpenClawChrome(browserConfig, profile);
+    didLaunch = true;
+  }
+  try {
+    const cdpUrl = browserConfig.attachOnly ? profile.cdpUrl : `http://127.0.0.1:${running.cdpPort}`;
+    let wsUrl = null;
+    onProgress("Waiting for browser debugger...");
+    for (let i = 0; i < 10; i++) {
+      wsUrl = await getChromeWebSocketUrl(cdpUrl, 2e3);
+      if (wsUrl) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!wsUrl) {
+      throw new Error(`Failed to resolve Chrome WebSocket URL from ${cdpUrl} after retries.`);
+    }
+    onProgress("Connecting to browser...");
+    const browser = await chromium13.connectOverCDP(wsUrl, {
+      headers: getHeadersWithAuth(wsUrl)
+    });
+    const context = browser.contexts()[0];
+    const page = context.pages()[0] || await context.newPage();
+    onProgress("Navigating to ChatGLM...");
+    await page.goto("https://chatglm.cn", { waitUntil: "domcontentloaded" });
+    const userAgent = await page.evaluate(() => navigator.userAgent);
+    const alreadyLoggedIn = await page.evaluate(
+      () => document.cookie.includes("chatglm_refresh_token")
+    );
+    if (alreadyLoggedIn) {
+      onProgress("\u68C0\u6D4B\u5230\u5DF2\u6709\u767B\u5F55\u72B6\u6001\uFF0C\u76F4\u63A5\u4F7F\u7528...");
+    } else {
+      onProgress("Please login to ChatGLM (\u667A\u8C31\u6E05\u8A00) in the opened browser window...");
+      onProgress("Waiting for authentication (chatglm_refresh_token cookie)...");
+      await page.waitForFunction(
+        () => {
+          return document.cookie.includes("chatglm_refresh_token");
+        },
+        { timeout: 3e5 }
+        // 5 minutes
+      );
+    }
+    onProgress("Login detected, capturing cookies...");
+    const cookies = await context.cookies("https://chatglm.cn");
+    const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    onProgress("Authentication captured successfully!");
+    return { cookie: cookieString, userAgent };
   } finally {
     if (didLaunch && running && "proc" in running) {
       await stopOpenClawChrome(running);
@@ -7772,9 +8012,1560 @@ Please proceed based on this tool result.`;
   };
 }
 
-// src/zero-token/streams/grok-web-stream.ts
+// src/zero-token/streams/glm-intl-web-stream.ts
 import {
   createAssistantMessageEventStream as createAssistantMessageEventStream6
+} from "@mariozechner/pi-ai";
+
+// src/zero-token/providers/glm-intl-web-client-browser.ts
+init_shared_browser();
+import crypto6 from "node:crypto";
+var SIGN_SECRET = "8a1317a7468aa3ad86e997d08f3f31cb";
+function generateSign() {
+  const e = Date.now();
+  const A = e.toString();
+  const t = A.length;
+  const o = A.split("").map((c) => Number(c));
+  const i = o.reduce((acc, v) => acc + v, 0) - o[t - 2];
+  const a = i % 10;
+  const timestamp = A.substring(0, t - 2) + a + A.substring(t - 1, t);
+  const nonce = crypto6.randomUUID().replace(/-/g, "");
+  const sign = crypto6.createHash("md5").update(`${timestamp}-${nonce}-${SIGN_SECRET}`).digest("hex");
+  return { timestamp, nonce, sign };
+}
+var GlmIntlWebClientBrowser = class {
+  options;
+  browser = null;
+  context = null;
+  page = null;
+  initialized = false;
+  accessToken = null;
+  deviceId = crypto6.randomUUID().replace(/-/g, "");
+  constructor(options) {
+    this.options = options;
+  }
+  parseCookies() {
+    return this.options.cookie.split(";").filter((c) => c.trim().includes("=")).map((cookie) => {
+      const [name, ...valueParts] = cookie.trim().split("=");
+      return {
+        name: name?.trim() ?? "",
+        value: valueParts.join("=").trim(),
+        domain: ".z.ai",
+        path: "/"
+      };
+    }).filter((c) => c.name.length > 0);
+  }
+  getRefreshToken() {
+    const cookies = this.parseCookies();
+    const refreshCookieNames = [
+      "chatglm_refresh_token",
+      "refresh_token",
+      "auth_refresh_token",
+      "glm_refresh_token",
+      "zai_refresh_token"
+    ];
+    for (const name of refreshCookieNames) {
+      const cookie = cookies.find((c) => c.name === name);
+      if (cookie?.value) {
+        console.log(`[GLM Intl Web Browser] Found refresh token cookie: ${name}`);
+        return cookie.value;
+      }
+    }
+    return null;
+  }
+  getAccessTokenFromCookie() {
+    const cookies = this.parseCookies();
+    const accessTokenCookieNames = [
+      "chatglm_token",
+      "access_token",
+      "auth_token",
+      "glm_token",
+      "zai_token",
+      "token"
+    ];
+    for (const name of accessTokenCookieNames) {
+      const cookie = cookies.find((c) => c.name === name);
+      if (cookie?.value) {
+        console.log(`[GLM Intl Web Browser] Found access token cookie: ${name}`);
+        return cookie.value;
+      }
+    }
+    return null;
+  }
+  async init() {
+    if (this.initialized) {
+      return;
+    }
+    const { context, page } = await getSharedBrowser("GLM Intl Web Browser", "https://chat.z.ai/");
+    this.context = context;
+    this.page = page;
+    const cookies = this.parseCookies();
+    if (cookies.length > 0) {
+      try {
+        await this.context.addCookies(cookies);
+      } catch (e) {
+        console.warn("[GLM Intl Web Browser] Failed to add some cookies:", e);
+      }
+    }
+    await this.refreshAccessToken();
+    this.initialized = true;
+  }
+  async refreshAccessToken() {
+    const cookieToken = this.getAccessTokenFromCookie();
+    if (cookieToken) {
+      this.accessToken = cookieToken;
+      console.log("[GLM Intl Web Browser] Using chatglm_token from cookies");
+      return;
+    }
+    if (this.context) {
+      try {
+        const browserCookies = await this.context.cookies(["https://chat.z.ai"]);
+        const browserToken = browserCookies.find((c) => c.name === "chatglm_token");
+        if (browserToken?.value) {
+          this.accessToken = browserToken.value;
+          console.log("[GLM Intl Web Browser] Using chatglm_token from browser cookies");
+          return;
+        }
+      } catch {
+      }
+    }
+    const refreshToken = this.getRefreshToken();
+    if (!refreshToken || !this.page) {
+      console.warn(
+        "[GLM Intl Web Browser] No chatglm_token found, will rely on browser cookies for auth"
+      );
+      return;
+    }
+    console.log("[GLM Intl Web Browser] Refreshing access token via API...");
+    const sign = generateSign();
+    const requestId = crypto6.randomUUID().replace(/-/g, "");
+    const result = await this.page.evaluate(
+      async ({ refreshToken: refreshToken2, deviceId, requestId: requestId2, sign: sign2 }) => {
+        try {
+          const res = await fetch("https://chat.z.ai/chatglm/user-api/user/refresh", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${refreshToken2}`,
+              "App-Name": "chatglm",
+              "X-App-Platform": "pc",
+              "X-App-Version": "0.0.1",
+              "X-Device-Id": deviceId,
+              "X-Request-Id": requestId2,
+              "X-Sign": sign2.sign,
+              "X-Nonce": sign2.nonce,
+              "X-Timestamp": sign2.timestamp
+            },
+            credentials: "include",
+            body: JSON.stringify({})
+          });
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+              return { ok: false, status: res.status, error: `\u767B\u5F55\u5DF2\u8FC7\u671F\uFF08HTTP ${res.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55 chat.z.ai` };
+            }
+            return { ok: false, status: res.status, error: await res.text() };
+          }
+          const data = await res.json();
+          const accessToken = data?.result?.access_token ?? data?.result?.accessToken ?? data?.accessToken;
+          if (!accessToken) {
+            return {
+              ok: false,
+              status: 200,
+              error: `No accessToken in response: ${JSON.stringify(data).substring(0, 300)}`
+            };
+          }
+          return { ok: true, accessToken };
+        } catch (err) {
+          return { ok: false, status: 500, error: String(err) };
+        }
+      },
+      { refreshToken, deviceId: this.deviceId, requestId, sign }
+    );
+    if (result.ok && result.accessToken) {
+      this.accessToken = result.accessToken;
+      console.log("[GLM Intl Web Browser] Access token refreshed successfully");
+    } else {
+      console.warn(`[GLM Intl Web Browser] Failed to refresh access token: ${result.error}`);
+    }
+  }
+  async chatCompletions(params) {
+    if (!this.page) {
+      throw new Error("GlmIntlWebClientBrowser not initialized");
+    }
+    const page = this.page;
+    const model = params.model;
+    console.log(`[GLM Intl Web Browser] UI mode send... model=${model}`);
+    if (!page.url().includes("chat.z.ai")) {
+      await page.goto("https://chat.z.ai/", { waitUntil: "domcontentloaded", timeout: 12e4 });
+    }
+    const beforeCount = await page.locator(".chat-assistant").count();
+    let sent = false;
+    const textarea = page.locator("textarea").first();
+    if (await textarea.count() > 0) {
+      await textarea.click({ timeout: 5e3 });
+      await textarea.fill(params.message);
+      await textarea.press("Enter");
+      sent = true;
+    }
+    if (!sent) {
+      const editable = page.locator('[contenteditable="true"]').first();
+      if (await editable.count() > 0) {
+        await editable.click({ timeout: 5e3 });
+        await page.keyboard.type(params.message, { delay: 5 });
+        await page.keyboard.press("Enter");
+        sent = true;
+      }
+    }
+    if (!sent) {
+      const input = page.locator('input[type="text"]').first();
+      if (await input.count() > 0) {
+        await input.click({ timeout: 5e3 });
+        await input.fill(params.message);
+        const sendBtn = page.locator('button.sendMessageButton, button[aria-label*="Send"], button:has-text("\u53D1\u9001")').first();
+        if (await sendBtn.count() > 0) {
+          await sendBtn.click();
+          sent = true;
+        } else {
+          await input.press("Enter");
+          sent = true;
+        }
+      }
+    }
+    if (!sent) {
+      throw new Error("GLM Intl UI send failed: no chat input found.");
+    }
+    await page.waitForFunction(
+      (prev) => document.querySelectorAll(".chat-assistant").length > prev,
+      beforeCount,
+      { timeout: 12e4, polling: 500 }
+    ).catch(() => {
+    });
+    const deadline = Date.now() + 12e4;
+    let stableRounds = 0;
+    let lastText = "";
+    while (Date.now() < deadline) {
+      const text = await page.evaluate(() => {
+        const nodes = Array.from(document.querySelectorAll(".chat-assistant"));
+        const latest = nodes[nodes.length - 1];
+        return (latest?.innerText ?? "").trim();
+      });
+      if (text && text === lastText) {
+        stableRounds += 1;
+      } else {
+        stableRounds = 0;
+        lastText = text;
+      }
+      if (lastText && stableRounds >= 3) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 900));
+    }
+    if (!lastText) {
+      throw new Error("GLM Intl UI reply capture failed: assistant message not found.");
+    }
+    const payload = `data: ${JSON.stringify({ text: lastText })}
+
+`;
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(payload));
+        controller.close();
+      }
+    });
+  }
+  async close() {
+    await releaseSharedBrowser();
+    this.page = null;
+    this.context = null;
+    this.browser = null;
+    this.initialized = false;
+    this.accessToken = null;
+  }
+};
+
+// src/zero-token/streams/glm-intl-web-stream.ts
+var sessionMap4 = new LruMap();
+function createGlmIntlWebStreamFn(cookieOrJson) {
+  let options;
+  try {
+    const parsed = JSON.parse(cookieOrJson);
+    options = parsed;
+  } catch {
+    options = { cookie: cookieOrJson, userAgent: "Mozilla/5.0" };
+  }
+  const client = new GlmIntlWebClientBrowser(options);
+  return (model, context, streamOptions) => {
+    const stream = createAssistantMessageEventStream6();
+    const run = async () => {
+      try {
+        await client.init();
+        const sessionKey = context.sessionId || "default";
+        let conversationId = sessionMap4.get(sessionKey);
+        const messages = context.messages || [];
+        const systemPrompt = context.systemPrompt || "";
+        const tools = context.tools || [];
+        let toolPrompt = "";
+        if (tools.length > 0) {
+          toolPrompt = "\n## Available Tools\n";
+          for (const tool of tools) {
+            toolPrompt += `- ${tool.name}: ${tool.description}
+`;
+          }
+        }
+        let prompt = "";
+        if (!conversationId) {
+          const historyParts = [];
+          let systemPromptContent = systemPrompt;
+          if (toolPrompt) {
+            systemPromptContent += toolPrompt;
+          }
+          if (systemPromptContent && !messages.some((m) => m.role === "system")) {
+            historyParts.push(`System: ${systemPromptContent}`);
+          }
+          for (const m of messages) {
+            const role = m.role === "user" || m.role === "toolResult" ? "User" : "Assistant";
+            let content = "";
+            if (m.role === "toolResult") {
+              const tr = m;
+              let resultText = "";
+              if (Array.isArray(tr.content)) {
+                for (const part of tr.content) {
+                  if (part.type === "text") {
+                    resultText += part.text;
+                  }
+                }
+              }
+              content = `
+<tool_response id="${tr.toolCallId}" name="${tr.toolName}">
+${resultText}
+</tool_response>
+`;
+            } else if (Array.isArray(m.content)) {
+              for (const part of m.content) {
+                if (part.type === "text") {
+                  content += part.text;
+                } else if (part.type === "thinking") {
+                  content += `<think>
+${part.thinking}
+</think>
+`;
+                } else if (part.type === "toolCall") {
+                  const tc = part;
+                  content += `<tool_call id="${tc.id}" name="${tc.name}">${JSON.stringify(tc.arguments)}</tool_call>`;
+                }
+              }
+            } else {
+              content = String(m.content);
+            }
+            historyParts.push(`${role}: ${content}`);
+          }
+          prompt = historyParts.join("\n\n");
+        } else {
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg?.role === "toolResult") {
+            const tr = lastMsg;
+            let resultText = "";
+            if (Array.isArray(tr.content)) {
+              for (const part of tr.content) {
+                if (part.type === "text") {
+                  resultText += part.text;
+                }
+              }
+            }
+            prompt = `
+<tool_response id="${tr.toolCallId}" name="${tr.toolName}">
+${resultText}
+</tool_response>
+
+Please proceed based on this tool result.`;
+          } else {
+            const lastUserMessage = [...messages].toReversed().find((m) => m.role === "user");
+            if (lastUserMessage) {
+              if (typeof lastUserMessage.content === "string") {
+                prompt = lastUserMessage.content;
+              } else if (Array.isArray(lastUserMessage.content)) {
+                prompt = lastUserMessage.content.filter((part) => part.type === "text").map((part) => part.text).join("");
+              }
+            }
+          }
+        }
+        if (toolPrompt && conversationId) {
+          prompt += '\n\n[SYSTEM HINT]: Keep in mind your available tools. To use a tool, you MUST output the EXACT XML format: <tool_call id="unique_id" name="tool_name">{"arg": "value"}</tool_call>. Using plain text to describe your action will FAIL to execute the tool.';
+        }
+        if (!prompt) {
+          throw new Error("No message found to send to GLM International API");
+        }
+        console.log(`[GlmIntlWebStream] Starting run for session: ${sessionKey}`);
+        console.log(`[GlmIntlWebStream] Conversation ID: ${conversationId || "new"}`);
+        console.log(`[GlmIntlWebStream] Tools available: ${tools.length}`);
+        console.log(`[GlmIntlWebStream] Prompt length: ${prompt.length}`);
+        const responseStream = await withRetry(() => client.chatCompletions({
+          conversationId,
+          message: prompt,
+          model: model.id,
+          signal: streamOptions?.signal
+        }), { label: "GLM-Intl" });
+        if (!responseStream) {
+          throw new Error("GLM International API returned empty response body");
+        }
+        const reader = responseStream.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        const indexMap = /* @__PURE__ */ new Map();
+        let nextIndex = 0;
+        const contentParts = [];
+        const accumulatedToolCalls = [];
+        const createPartial = () => {
+          const msg = {
+            role: "assistant",
+            content: [...contentParts],
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+            },
+            stopReason: accumulatedToolCalls.length > 0 ? "toolUse" : "stop",
+            timestamp: Date.now()
+          };
+          msg.thinking_enabled = contentParts.some((p) => p.type === "thinking");
+          return msg;
+        };
+        let currentMode = "text";
+        let currentToolName = "";
+        let currentToolIndex = 0;
+        let tagBuffer = "";
+        const emitDelta = (type, delta, forceId) => {
+          if (delta === "" && type !== "toolcall") {
+            return;
+          }
+          const key = type === "toolcall" ? `tool_${currentToolIndex}` : type;
+          if (!indexMap.has(key)) {
+            const index2 = nextIndex++;
+            indexMap.set(key, index2);
+            if (type === "text") {
+              contentParts[index2] = { type: "text", text: "" };
+              stream.push({ type: "text_start", contentIndex: index2, partial: createPartial() });
+            } else if (type === "thinking") {
+              contentParts[index2] = { type: "thinking", thinking: "" };
+              stream.push({
+                type: "thinking_start",
+                contentIndex: index2,
+                partial: createPartial()
+              });
+            } else if (type === "toolcall") {
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0, 8)}_${index2}`;
+              contentParts[index2] = {
+                type: "toolCall",
+                id: toolId,
+                name: currentToolName,
+                arguments: {}
+              };
+              accumulatedToolCalls[currentToolIndex] = {
+                id: toolId,
+                name: currentToolName,
+                arguments: "",
+                index: currentToolIndex
+              };
+              stream.push({
+                type: "toolcall_start",
+                contentIndex: index2,
+                partial: createPartial()
+              });
+            }
+          }
+          const index = indexMap.get(key);
+          if (type === "text") {
+            contentParts[index].text += delta;
+            stream.push({
+              type: "text_delta",
+              contentIndex: index,
+              delta,
+              partial: createPartial()
+            });
+          } else if (type === "thinking") {
+            contentParts[index].thinking += delta;
+            stream.push({
+              type: "thinking_delta",
+              contentIndex: index,
+              delta,
+              partial: createPartial()
+            });
+          } else if (type === "toolcall") {
+            accumulatedToolCalls[currentToolIndex].arguments += delta;
+            stream.push({
+              type: "toolcall_delta",
+              contentIndex: index,
+              delta,
+              partial: createPartial()
+            });
+          }
+        };
+        const pushDelta = (delta, forceType) => {
+          if (!delta) {
+            return;
+          }
+          if (forceType === "thinking") {
+            emitDelta("thinking", delta);
+            return;
+          }
+          tagBuffer += delta;
+          const checkTags = () => {
+            const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
+            const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
+            const toolCallStart = tagBuffer.match(
+              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i
+            );
+            const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
+            const indices = [
+              {
+                type: "think_start",
+                idx: thinkStart?.index ?? -1,
+                len: thinkStart?.[0].length ?? 0
+              },
+              { type: "think_end", idx: thinkEnd?.index ?? -1, len: thinkEnd?.[0].length ?? 0 },
+              {
+                type: "tool_start",
+                idx: toolCallStart?.index ?? -1,
+                len: toolCallStart?.[0].length ?? 0,
+                id: toolCallStart?.[1] || toolCallStart?.[3],
+                name: toolCallStart?.[2]
+              },
+              {
+                type: "tool_end",
+                idx: toolCallEnd?.index ?? -1,
+                len: toolCallEnd?.[0].length ?? 0
+              }
+            ].filter((t) => t.idx !== -1).toSorted((a, b) => a.idx - b.idx);
+            if (indices.length > 0) {
+              const first = indices[0];
+              const before = tagBuffer.slice(0, first.idx);
+              if (before) {
+                if (currentMode === "thinking") {
+                  emitDelta("thinking", before);
+                } else if (currentMode === "tool_call") {
+                  emitDelta("toolcall", before);
+                } else {
+                  emitDelta("text", before);
+                }
+              }
+              if (first.type === "think_start") {
+                currentMode = "thinking";
+              } else if (first.type === "think_end") {
+                currentMode = "text";
+              } else if (first.type === "tool_start") {
+                currentMode = "tool_call";
+                currentToolName = first.name;
+                emitDelta("toolcall", "", first.id);
+              } else if (first.type === "tool_end") {
+                const index = indexMap.get(`tool_${currentToolIndex}`);
+                if (index !== void 0) {
+                  const part = contentParts[index];
+                  const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
+                  let cleanedArg = argStr.trim();
+                  if (cleanedArg.startsWith("```json")) {
+                    cleanedArg = cleanedArg.substring(7);
+                  } else if (cleanedArg.startsWith("```")) {
+                    cleanedArg = cleanedArg.substring(3);
+                  }
+                  if (cleanedArg.endsWith("```")) {
+                    cleanedArg = cleanedArg.substring(0, cleanedArg.length - 3);
+                  }
+                  cleanedArg = cleanedArg.trim();
+                  try {
+                    part.arguments = JSON.parse(cleanedArg);
+                  } catch (e) {
+                    part.arguments = { raw: argStr };
+                    console.error(
+                      `[GlmIntlWebStream] Failed to parse JSON for tool call ${currentToolName}:`,
+                      argStr,
+                      "\nError:",
+                      e
+                    );
+                  }
+                  stream.push({
+                    type: "toolcall_end",
+                    contentIndex: index,
+                    toolCall: part,
+                    partial: createPartial()
+                  });
+                }
+                currentMode = "text";
+                currentToolIndex++;
+              }
+              tagBuffer = tagBuffer.slice(first.idx + first.len);
+              checkTags();
+            } else {
+              const lastAngle = tagBuffer.lastIndexOf("<");
+              if (lastAngle === -1) {
+                const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
+                emitDelta(mode, tagBuffer);
+                tagBuffer = "";
+              } else if (lastAngle > 0) {
+                const safe = tagBuffer.slice(0, lastAngle);
+                const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
+                emitDelta(mode, safe);
+                tagBuffer = tagBuffer.slice(lastAngle);
+              }
+            }
+          };
+          checkTags();
+        };
+        const processLine = (line) => {
+          if (!line || !line.startsWith("data:")) {
+            return;
+          }
+          const dataStr = line.slice(5).trim();
+          if (dataStr === "[DONE]" || !dataStr) {
+            return;
+          }
+          try {
+            const data = JSON.parse(dataStr);
+            if (data.conversation_id) {
+              sessionMap4.set(sessionKey, data.conversation_id);
+            }
+            let delta = "";
+            if (data.text) {
+              delta = data.text;
+            } else if (data.content) {
+              delta = data.content;
+            } else if (data.delta) {
+              delta = data.delta;
+            } else if (data.message) {
+              delta = data.message;
+            } else if (data.parts && Array.isArray(data.parts)) {
+              for (const part of data.parts) {
+                if (part && typeof part === "object") {
+                  const p = part;
+                  const content = p.content;
+                  if (Array.isArray(content)) {
+                    for (const c of content) {
+                      if (c && typeof c === "object") {
+                        const cc = c;
+                        if (cc.type === "text" && typeof cc.text === "string") {
+                          delta = cc.text;
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  if (delta) {
+                    break;
+                  }
+                }
+              }
+            }
+            if (typeof delta === "string" && delta) {
+              pushDelta(delta);
+            }
+          } catch {
+          }
+        };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            if (buffer.trim()) {
+              processLine(buffer.trim());
+            }
+            break;
+          }
+          const chunk = decoder.decode(value, { stream: true });
+          const combined = buffer + chunk;
+          const parts = combined.split("\n");
+          buffer = parts.pop() || "";
+          for (const part of parts) {
+            processLine(part.trim());
+          }
+        }
+        if (tagBuffer) {
+          const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
+          emitDelta(mode, tagBuffer);
+        }
+        console.log(
+          `[GlmIntlWebStream] Stream completed. Parts: ${contentParts.length}, Tools: ${accumulatedToolCalls.length}`
+        );
+        stream.push({
+          type: "done",
+          reason: accumulatedToolCalls.length > 0 ? "toolUse" : "stop",
+          message: createPartial()
+        });
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        stream.push({
+          type: "error",
+          reason: "error",
+          error: {
+            role: "assistant",
+            content: [],
+            stopReason: "error",
+            errorMessage,
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+            },
+            timestamp: Date.now()
+          }
+        });
+      } finally {
+        stream.end();
+      }
+    };
+    queueMicrotask(() => void run());
+    return stream;
+  };
+}
+
+// src/zero-token/streams/glm-web-stream.ts
+import {
+  createAssistantMessageEventStream as createAssistantMessageEventStream7
+} from "@mariozechner/pi-ai";
+
+// src/zero-token/providers/glm-web-client-browser.ts
+init_shared_browser();
+import crypto7 from "node:crypto";
+var ASSISTANT_ID_MAP = {
+  "glm-4-plus": "65940acff94777010aa6b796",
+  "glm-4": "65940acff94777010aa6b796",
+  "glm-4-think": "676411c38945bbc58a905d31",
+  "glm-4-zero": "676411c38945bbc58a905d31"
+};
+var DEFAULT_ASSISTANT_ID = "65940acff94777010aa6b796";
+var SIGN_SECRET2 = "8a1317a7468aa3ad86e997d08f3f31cb";
+var X_EXP_GROUPS = "na_android_config:exp:NA,na_4o_config:exp:4o_A,tts_config:exp:tts_config_a,na_glm4plus_config:exp:open,mainchat_server_app:exp:A,mobile_history_daycheck:exp:a,desktop_toolbar:exp:A,chat_drawing_server:exp:A,drawing_server_cogview:exp:cogview4,app_welcome_v2:exp:A,chat_drawing_streamv2:exp:A,mainchat_rm_fc:exp:add,mainchat_dr:exp:open,chat_auto_entrance:exp:A,drawing_server_hi_dream:control:A,homepage_square:exp:close,assistant_recommend_prompt:exp:3,app_home_regular_user:exp:A,memory_common:exp:enable,mainchat_moe:exp:300,assistant_greet_user:exp:greet_user,app_welcome_personalize:exp:A,assistant_model_exp_group:exp:glm4.5,ai_wallet:exp:ai_wallet_enable";
+function generateSign2() {
+  const e = Date.now();
+  const A = e.toString();
+  const t = A.length;
+  const o = A.split("").map((c) => Number(c));
+  const i = o.reduce((acc, v) => acc + v, 0) - o[t - 2];
+  const a = i % 10;
+  const timestamp = A.substring(0, t - 2) + a + A.substring(t - 1, t);
+  const nonce = crypto7.randomUUID().replace(/-/g, "");
+  const sign = crypto7.createHash("md5").update(`${timestamp}-${nonce}-${SIGN_SECRET2}`).digest("hex");
+  return { timestamp, nonce, sign };
+}
+var ZWebClientBrowser = class {
+  options;
+  browser = null;
+  context = null;
+  page = null;
+  initialized = false;
+  accessToken = null;
+  deviceId = crypto7.randomUUID().replace(/-/g, "");
+  constructor(options) {
+    this.options = options;
+  }
+  parseCookies() {
+    return this.options.cookie.split(";").filter((c) => c.trim().includes("=")).map((cookie) => {
+      const [name, ...valueParts] = cookie.trim().split("=");
+      return {
+        name: name?.trim() ?? "",
+        value: valueParts.join("=").trim(),
+        domain: ".chatglm.cn",
+        path: "/"
+      };
+    }).filter((c) => c.name.length > 0);
+  }
+  getRefreshToken() {
+    const cookies = this.parseCookies();
+    const refreshCookie = cookies.find((c) => c.name === "chatglm_refresh_token");
+    return refreshCookie?.value ?? null;
+  }
+  getAccessTokenFromCookie() {
+    const cookies = this.parseCookies();
+    const tokenCookie = cookies.find((c) => c.name === "chatglm_token");
+    return tokenCookie?.value ?? null;
+  }
+  async init() {
+    if (this.initialized) {
+      return;
+    }
+    const { context, page } = await getSharedBrowser("Z Web Browser", "https://chatglm.cn");
+    this.context = context;
+    this.page = page;
+    const cookies = this.parseCookies();
+    if (cookies.length > 0) {
+      try {
+        await this.context.addCookies(cookies);
+      } catch (e) {
+        console.warn("[Z Web Browser] Failed to add some cookies:", e);
+      }
+    }
+    await this.refreshAccessToken();
+    this.initialized = true;
+  }
+  tokenRefreshedViaApi = false;
+  async refreshAccessToken(forceApi = false) {
+    if (!forceApi && !this.tokenRefreshedViaApi) {
+      const cookieToken = this.getAccessTokenFromCookie();
+      if (cookieToken) {
+        this.accessToken = cookieToken;
+        console.log("[Z Web Browser] Using chatglm_token from cookies");
+        return;
+      }
+      if (this.context) {
+        try {
+          const browserCookies = await this.context.cookies(["https://chatglm.cn"]);
+          const browserToken = browserCookies.find((c) => c.name === "chatglm_token");
+          if (browserToken?.value) {
+            this.accessToken = browserToken.value;
+            console.log("[Z Web Browser] Using chatglm_token from browser cookies");
+            return;
+          }
+        } catch {
+        }
+      }
+    }
+    const refreshToken = this.getRefreshToken();
+    if (!refreshToken || !this.page) {
+      console.warn("[Z Web Browser] No refresh token available, cannot refresh access token");
+      return;
+    }
+    console.log("[Z Web Browser] Refreshing access token via API...");
+    const sign = generateSign2();
+    const requestId = crypto7.randomUUID().replace(/-/g, "");
+    const result = await this.page.evaluate(
+      async ({ refreshToken: refreshToken2, deviceId, requestId: requestId2, sign: sign2 }) => {
+        try {
+          const res = await fetch("https://chatglm.cn/chatglm/user-api/user/refresh", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${refreshToken2}`,
+              "App-Name": "chatglm",
+              "X-App-Platform": "pc",
+              "X-App-Version": "0.0.1",
+              "X-Device-Id": deviceId,
+              "X-Request-Id": requestId2,
+              "X-Sign": sign2.sign,
+              "X-Nonce": sign2.nonce,
+              "X-Timestamp": sign2.timestamp
+            },
+            credentials: "include",
+            body: JSON.stringify({})
+          });
+          if (!res.ok) {
+            return { ok: false, status: res.status, error: await res.text() };
+          }
+          const data = await res.json();
+          const accessToken = data?.result?.access_token ?? data?.result?.accessToken ?? data?.accessToken;
+          if (!accessToken) {
+            return {
+              ok: false,
+              status: 200,
+              error: `No accessToken in response: ${JSON.stringify(data).substring(0, 300)}`
+            };
+          }
+          return { ok: true, accessToken };
+        } catch (err) {
+          return { ok: false, status: 500, error: String(err) };
+        }
+      },
+      { refreshToken, deviceId: this.deviceId, requestId, sign }
+    );
+    if (result.ok && result.accessToken) {
+      this.accessToken = result.accessToken;
+      this.tokenRefreshedViaApi = true;
+      console.log("[Z Web Browser] Access token refreshed successfully via API");
+    } else {
+      console.warn(`[Z Web Browser] Failed to refresh access token: ${result.error}`);
+    }
+  }
+  async chatCompletions(params) {
+    if (!this.page) {
+      throw new Error("ZWebClientBrowser not initialized");
+    }
+    if (!this.accessToken) {
+      await this.refreshAccessToken();
+    }
+    const { conversationId, message, model } = params;
+    const assistantId = ASSISTANT_ID_MAP[model] ?? DEFAULT_ASSISTANT_ID;
+    console.log(`[Z Web Browser] Sending request... model=${model} assistantId=${assistantId}`);
+    const fetchTimeoutMs = 12e4;
+    const sign = generateSign2();
+    const requestId = crypto7.randomUUID().replace(/-/g, "");
+    const body = {
+      assistant_id: assistantId,
+      conversation_id: conversationId || "",
+      project_id: "",
+      chat_type: "user_chat",
+      meta_data: {
+        cogview: { rm_label_watermark: false },
+        is_test: false,
+        input_question_type: "xxxx",
+        channel: "",
+        draft_id: "",
+        chat_mode: "zero",
+        is_networking: false,
+        quote_log_id: "",
+        platform: "pc"
+      },
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: message }]
+        }
+      ]
+    };
+    const evalPromise = this.page.evaluate(
+      async ({ accessToken, bodyStr, deviceId, requestId: requestId2, timeoutMs, sign: sign2, xExpGroups }) => {
+        let timer;
+        try {
+          const controller = new AbortController();
+          timer = setTimeout(() => controller.abort(), timeoutMs);
+          const headers = {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            "App-Name": "chatglm",
+            Origin: "https://chatglm.cn",
+            "X-App-Platform": "pc",
+            "X-App-Version": "0.0.1",
+            "X-App-fr": "default",
+            "X-Device-Brand": "",
+            "X-Device-Id": deviceId,
+            "X-Device-Model": "",
+            "X-Exp-Groups": xExpGroups,
+            "X-Lang": "zh",
+            "X-Nonce": sign2.nonce,
+            "X-Request-Id": requestId2,
+            "X-Sign": sign2.sign,
+            "X-Timestamp": sign2.timestamp
+          };
+          if (accessToken) {
+            headers["Authorization"] = `Bearer ${accessToken}`;
+          }
+          const res = await fetch("https://chatglm.cn/chatglm/backend-api/assistant/stream", {
+            method: "POST",
+            headers,
+            credentials: "include",
+            body: bodyStr,
+            signal: controller.signal
+          });
+          clearTimeout(timer);
+          if (!res.ok) {
+            const errorText = await res.text();
+            return { ok: false, status: res.status, error: errorText.substring(0, 500) };
+          }
+          const reader = res.body?.getReader();
+          if (!reader) {
+            return { ok: false, status: 500, error: "No response body" };
+          }
+          const decoder = new TextDecoder();
+          let fullText = "";
+          let chunkCount = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+            const chunk = decoder.decode(value, { stream: true });
+            fullText += chunk;
+            chunkCount++;
+          }
+          return { ok: true, data: fullText, chunkCount };
+        } catch (err) {
+          if (timer) {
+            clearTimeout(timer);
+          }
+          const msg = String(err);
+          if (msg.includes("aborted") || msg.includes("signal")) {
+            return {
+              ok: false,
+              status: 408,
+              error: `ChatGLM API request timed out after ${timeoutMs}ms`
+            };
+          }
+          return { ok: false, status: 500, error: msg };
+        }
+      },
+      {
+        accessToken: this.accessToken,
+        bodyStr: JSON.stringify(body),
+        deviceId: this.deviceId,
+        requestId,
+        timeoutMs: fetchTimeoutMs,
+        sign,
+        xExpGroups: X_EXP_GROUPS
+      }
+    );
+    const externalTimeoutMs = fetchTimeoutMs + 1e4;
+    const responseData = await Promise.race([
+      evalPromise,
+      new Promise(
+        (_, reject) => setTimeout(
+          () => reject(
+            new Error(
+              `[Z Web Browser] page.evaluate timed out after ${externalTimeoutMs / 1e3}s`
+            )
+          ),
+          externalTimeoutMs
+        )
+      )
+    ]);
+    if (!responseData || !responseData.ok) {
+      if (responseData?.status === 401) {
+        console.log("[Z Web Browser] Access token expired, refreshing...");
+        await this.refreshAccessToken();
+        throw new Error("Authentication expired. Token has been refreshed, please retry.");
+      }
+      throw new Error(
+        `ChatGLM API error: ${responseData?.status || "unknown"} - ${responseData?.error || "Request failed"}`
+      );
+    }
+    console.log(
+      `[Z Web Browser] Response: ${responseData.chunkCount} chunks, ${responseData.data?.length || 0} bytes`
+    );
+    if (responseData.data && responseData.data.length < 500) {
+      console.log(`[Z Web Browser] Response content: ${responseData.data}`);
+    }
+    if (responseData.data && responseData.data.length < 200) {
+      console.log("[Z Web Browser] Very short response, force-refreshing token via API and retrying...");
+      this.accessToken = null;
+      await this.refreshAccessToken(true);
+      if (this.accessToken) {
+        const retrySign = generateSign2();
+        const retryRequestId = crypto7.randomUUID().replace(/-/g, "");
+        const retryBody = { ...body };
+        const retryData = await this.page.evaluate(
+          async ({ accessToken, bodyStr, deviceId, requestId: requestId2, timeoutMs, sign: sign2, xExpGroups }) => {
+            try {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), timeoutMs);
+              const headers = {
+                "Content-Type": "application/json",
+                Accept: "text/event-stream",
+                "App-Name": "chatglm",
+                Origin: "https://chatglm.cn",
+                "X-App-Platform": "pc",
+                "X-App-Version": "0.0.1",
+                "X-App-fr": "default",
+                "X-Device-Brand": "",
+                "X-Device-Id": deviceId,
+                "X-Device-Model": "",
+                "X-Exp-Groups": xExpGroups,
+                "X-Lang": "zh",
+                "X-Nonce": sign2.nonce,
+                "X-Request-Id": requestId2,
+                "X-Sign": sign2.sign,
+                "X-Timestamp": sign2.timestamp
+              };
+              if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+              const res = await fetch("https://chatglm.cn/chatglm/backend-api/assistant/stream", {
+                method: "POST",
+                headers,
+                credentials: "include",
+                body: bodyStr,
+                signal: controller.signal
+              });
+              clearTimeout(timer);
+              if (!res.ok) return { ok: false, status: res.status, error: (await res.text()).substring(0, 500) };
+              const reader = res.body?.getReader();
+              if (!reader) return { ok: false, status: 500, error: "No response body" };
+              const decoder = new TextDecoder();
+              let fullText = "";
+              let chunkCount = 0;
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                fullText += decoder.decode(value, { stream: true });
+                chunkCount++;
+              }
+              return { ok: true, data: fullText, chunkCount };
+            } catch (err) {
+              return { ok: false, status: 500, error: String(err) };
+            }
+          },
+          { accessToken: this.accessToken, bodyStr: JSON.stringify(retryBody), deviceId: this.deviceId, requestId: retryRequestId, timeoutMs: fetchTimeoutMs, sign: retrySign, xExpGroups: X_EXP_GROUPS }
+        );
+        if (retryData?.ok && retryData.data && retryData.data.length > 200) {
+          console.log(`[Z Web Browser] Retry succeeded: ${retryData.chunkCount} chunks, ${retryData.data.length} bytes`);
+          const encoder2 = new TextEncoder();
+          return new ReadableStream({ start(controller) {
+            controller.enqueue(encoder2.encode(retryData.data));
+            controller.close();
+          } });
+        }
+        console.log(`[Z Web Browser] Retry also short: ${retryData?.data?.length || 0} bytes`);
+      }
+    }
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(responseData.data));
+        controller.close();
+      }
+    });
+  }
+  async close() {
+    await releaseSharedBrowser();
+    this.page = null;
+    this.context = null;
+    this.browser = null;
+    this.initialized = false;
+    this.accessToken = null;
+  }
+};
+
+// src/zero-token/streams/glm-web-stream.ts
+var sessionMap5 = new LruMap();
+function createGlmWebStreamFn(cookieOrJson) {
+  return createZWebStreamFn(cookieOrJson);
+}
+function createZWebStreamFn(cookieOrJson) {
+  let options;
+  try {
+    const parsed = JSON.parse(cookieOrJson);
+    options = parsed;
+  } catch {
+    options = { cookie: cookieOrJson, userAgent: "Mozilla/5.0" };
+  }
+  const client = new ZWebClientBrowser(options);
+  return (model, context, streamOptions) => {
+    const stream = createAssistantMessageEventStream7();
+    const run = async () => {
+      try {
+        await client.init();
+        const baseKey = context.sessionId || "default";
+        const sessionKey = `${baseKey}:${model.id}`;
+        let sessionId = sessionMap5.get(sessionKey);
+        const messages = context.messages || [];
+        const systemPrompt = context.systemPrompt || "";
+        const tools = context.tools || [];
+        let toolPrompt = "";
+        if (tools.length > 0) {
+          toolPrompt = "\n## Available Tools\n";
+          for (const tool of tools) {
+            toolPrompt += `- ${tool.name}: ${tool.description}
+`;
+          }
+        }
+        let prompt = "";
+        if (!sessionId) {
+          const historyParts = [];
+          let systemPromptContent = systemPrompt;
+          if (toolPrompt) {
+            systemPromptContent += toolPrompt;
+          }
+          if (systemPromptContent && !messages.some((m) => m.role === "system")) {
+            historyParts.push(`System: ${systemPromptContent}`);
+          }
+          for (const m of messages) {
+            const role = m.role === "user" || m.role === "toolResult" ? "User" : "Assistant";
+            let content = "";
+            if (m.role === "toolResult") {
+              const tr = m;
+              let resultText = "";
+              if (Array.isArray(tr.content)) {
+                for (const part of tr.content) {
+                  if (part.type === "text") {
+                    resultText += part.text;
+                  }
+                }
+              }
+              content = `
+<tool_response id="${tr.toolCallId}" name="${tr.toolName}">
+${resultText}
+</tool_response>
+`;
+            } else if (Array.isArray(m.content)) {
+              for (const part of m.content) {
+                if (part.type === "text") {
+                  content += part.text;
+                } else if (part.type === "thinking") {
+                  content += `<think>
+${part.thinking}
+</think>
+`;
+                } else if (part.type === "toolCall") {
+                  const tc = part;
+                  content += `<tool_call id="${tc.id}" name="${tc.name}">${JSON.stringify(tc.arguments)}</tool_call>`;
+                }
+              }
+            } else {
+              content = String(m.content);
+            }
+            historyParts.push(`${role}: ${content}`);
+          }
+          prompt = historyParts.join("\n\n");
+        } else {
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg?.role === "toolResult") {
+            const tr = lastMsg;
+            let resultText = "";
+            if (Array.isArray(tr.content)) {
+              for (const part of tr.content) {
+                if (part.type === "text") {
+                  resultText += part.text;
+                }
+              }
+            }
+            prompt = `
+<tool_response id="${tr.toolCallId}" name="${tr.toolName}">
+${resultText}
+</tool_response>
+
+Please proceed based on this tool result.`;
+          } else {
+            const lastUserMessage = [...messages].toReversed().find((m) => m.role === "user");
+            if (lastUserMessage) {
+              if (typeof lastUserMessage.content === "string") {
+                prompt = lastUserMessage.content;
+              } else if (Array.isArray(lastUserMessage.content)) {
+                prompt = lastUserMessage.content.filter((part) => part.type === "text").map((part) => part.text).join("");
+              }
+            }
+          }
+        }
+        if (toolPrompt && sessionId) {
+          prompt += '\n\n[SYSTEM HINT]: Keep in mind your available tools. To use a tool, you MUST output the EXACT XML format: <tool_call id="unique_id" name="tool_name">{"arg": "value"}</tool_call>. Using plain text to describe your action will FAIL to execute the tool.';
+        }
+        if (!prompt) {
+          throw new Error("No message found to send to ChatGLM API");
+        }
+        console.log(`[ZWebStream] Starting run for session: ${sessionKey}`);
+        console.log(`[ZWebStream] Conversation ID: ${sessionId || "new"}`);
+        console.log(`[ZWebStream] Tools available: ${tools.length}`);
+        console.log(`[ZWebStream] Prompt length: ${prompt.length}`);
+        const responseStream = await withRetry(() => client.chatCompletions({
+          conversationId: sessionId,
+          message: prompt,
+          model: model.id,
+          signal: streamOptions?.signal
+        }), { label: "GLM" });
+        if (!responseStream) {
+          throw new Error("ChatGLM API returned empty response body");
+        }
+        const reader = responseStream.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        const indexMap = /* @__PURE__ */ new Map();
+        let nextIndex = 0;
+        const contentParts = [];
+        const accumulatedToolCalls = [];
+        const createPartial = () => {
+          const msg = {
+            role: "assistant",
+            content: [...contentParts],
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+            },
+            stopReason: accumulatedToolCalls.length > 0 ? "toolUse" : "stop",
+            timestamp: Date.now()
+          };
+          msg.thinking_enabled = contentParts.some((p) => p.type === "thinking");
+          return msg;
+        };
+        let currentMode = "text";
+        let currentToolName = "";
+        let currentToolIndex = 0;
+        let tagBuffer = "";
+        const emitDelta = (type, delta, forceId) => {
+          if (delta === "" && type !== "toolcall") {
+            return;
+          }
+          const key = type === "toolcall" ? `tool_${currentToolIndex}` : type;
+          if (!indexMap.has(key)) {
+            const index2 = nextIndex++;
+            indexMap.set(key, index2);
+            if (type === "text") {
+              contentParts[index2] = { type: "text", text: "" };
+              stream.push({ type: "text_start", contentIndex: index2, partial: createPartial() });
+            } else if (type === "thinking") {
+              contentParts[index2] = { type: "thinking", thinking: "" };
+              stream.push({
+                type: "thinking_start",
+                contentIndex: index2,
+                partial: createPartial()
+              });
+            } else if (type === "toolcall") {
+              const toolId = forceId || `call_${crypto.randomUUID().slice(0, 8)}_${index2}`;
+              contentParts[index2] = {
+                type: "toolCall",
+                id: toolId,
+                name: currentToolName,
+                arguments: {}
+              };
+              accumulatedToolCalls[currentToolIndex] = {
+                id: toolId,
+                name: currentToolName,
+                arguments: "",
+                index: currentToolIndex
+              };
+              stream.push({
+                type: "toolcall_start",
+                contentIndex: index2,
+                partial: createPartial()
+              });
+            }
+          }
+          const index = indexMap.get(key);
+          if (type === "text") {
+            contentParts[index].text += delta;
+            stream.push({
+              type: "text_delta",
+              contentIndex: index,
+              delta,
+              partial: createPartial()
+            });
+          } else if (type === "thinking") {
+            contentParts[index].thinking += delta;
+            stream.push({
+              type: "thinking_delta",
+              contentIndex: index,
+              delta,
+              partial: createPartial()
+            });
+          } else if (type === "toolcall") {
+            accumulatedToolCalls[currentToolIndex].arguments += delta;
+            stream.push({
+              type: "toolcall_delta",
+              contentIndex: index,
+              delta,
+              partial: createPartial()
+            });
+          }
+        };
+        const pushDelta = (delta, forceType) => {
+          if (!delta) {
+            return;
+          }
+          if (forceType === "thinking") {
+            emitDelta("thinking", delta);
+            return;
+          }
+          tagBuffer += delta;
+          const checkTags = () => {
+            const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
+            const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
+            const toolCallStart = tagBuffer.match(
+              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i
+            );
+            const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
+            const indices = [
+              {
+                type: "think_start",
+                idx: thinkStart?.index ?? -1,
+                len: thinkStart?.[0].length ?? 0
+              },
+              { type: "think_end", idx: thinkEnd?.index ?? -1, len: thinkEnd?.[0].length ?? 0 },
+              {
+                type: "tool_start",
+                idx: toolCallStart?.index ?? -1,
+                len: toolCallStart?.[0].length ?? 0,
+                id: toolCallStart?.[1] || toolCallStart?.[3],
+                name: toolCallStart?.[2]
+              },
+              {
+                type: "tool_end",
+                idx: toolCallEnd?.index ?? -1,
+                len: toolCallEnd?.[0].length ?? 0
+              }
+            ].filter((t) => t.idx !== -1).toSorted((a, b) => a.idx - b.idx);
+            if (indices.length > 0) {
+              const first = indices[0];
+              const before = tagBuffer.slice(0, first.idx);
+              if (before) {
+                if (currentMode === "thinking") {
+                  emitDelta("thinking", before);
+                } else if (currentMode === "tool_call") {
+                  emitDelta("toolcall", before);
+                } else {
+                  emitDelta("text", before);
+                }
+              }
+              if (first.type === "think_start") {
+                currentMode = "thinking";
+              } else if (first.type === "think_end") {
+                currentMode = "text";
+              } else if (first.type === "tool_start") {
+                currentMode = "tool_call";
+                currentToolName = first.name;
+                emitDelta("toolcall", "", first.id);
+              } else if (first.type === "tool_end") {
+                const index = indexMap.get(`tool_${currentToolIndex}`);
+                if (index !== void 0) {
+                  const part = contentParts[index];
+                  const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
+                  let cleanedArg = argStr.trim();
+                  if (cleanedArg.startsWith("```json")) {
+                    cleanedArg = cleanedArg.substring(7);
+                  } else if (cleanedArg.startsWith("```")) {
+                    cleanedArg = cleanedArg.substring(3);
+                  }
+                  if (cleanedArg.endsWith("```")) {
+                    cleanedArg = cleanedArg.substring(0, cleanedArg.length - 3);
+                  }
+                  cleanedArg = cleanedArg.trim();
+                  try {
+                    part.arguments = JSON.parse(cleanedArg);
+                  } catch (e) {
+                    part.arguments = { raw: argStr };
+                    console.error(
+                      `[Qwen Stream] Failed to parse JSON for tool call ${currentToolName}:`,
+                      argStr,
+                      "\nError:",
+                      e
+                    );
+                  }
+                  stream.push({
+                    type: "toolcall_end",
+                    contentIndex: index,
+                    toolCall: part,
+                    partial: createPartial()
+                  });
+                }
+                currentMode = "text";
+                currentToolIndex++;
+              }
+              tagBuffer = tagBuffer.slice(first.idx + first.len);
+              checkTags();
+            } else {
+              const lastAngle = tagBuffer.lastIndexOf("<");
+              if (lastAngle === -1) {
+                const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
+                emitDelta(mode, tagBuffer);
+                tagBuffer = "";
+              } else if (lastAngle > 0) {
+                const safe = tagBuffer.slice(0, lastAngle);
+                const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
+                emitDelta(mode, safe);
+                tagBuffer = tagBuffer.slice(lastAngle);
+              }
+            }
+          };
+          checkTags();
+        };
+        let emittedLength = 0;
+        const processLine = (line) => {
+          if (!line || !line.startsWith("data:")) {
+            return;
+          }
+          const dataStr = line.slice(5).trim();
+          if (dataStr === "[DONE]" || !dataStr) {
+            return;
+          }
+          try {
+            const data = JSON.parse(dataStr);
+            if (data.conversation_id) {
+              sessionMap5.set(sessionKey, data.conversation_id);
+            }
+            let fullText = "";
+            if (data.parts && Array.isArray(data.parts)) {
+              for (const part of data.parts) {
+                if (part && typeof part === "object") {
+                  const p = part;
+                  const content = p.content;
+                  if (Array.isArray(content)) {
+                    for (const c of content) {
+                      if (c && typeof c === "object") {
+                        const cc = c;
+                        if (cc.type === "text" && typeof cc.text === "string") {
+                          fullText = cc.text;
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  if (fullText) break;
+                }
+              }
+            }
+            if (!fullText) {
+              fullText = data.text || data.content || data.delta || "";
+            }
+            if (typeof fullText === "string" && fullText.length > emittedLength) {
+              const delta = fullText.slice(emittedLength);
+              emittedLength = fullText.length;
+              pushDelta(delta);
+            }
+          } catch {
+          }
+        };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            if (buffer.trim()) {
+              processLine(buffer.trim());
+            }
+            break;
+          }
+          const chunk = decoder.decode(value, { stream: true });
+          const combined = buffer + chunk;
+          const parts = combined.split("\n");
+          buffer = parts.pop() || "";
+          for (const part of parts) {
+            processLine(part.trim());
+          }
+        }
+        if (tagBuffer) {
+          const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
+          emitDelta(mode, tagBuffer);
+        }
+        console.log(
+          `[ZWebStream] Stream completed. Parts: ${contentParts.length}, Tools: ${accumulatedToolCalls.length}`
+        );
+        stream.push({
+          type: "done",
+          reason: accumulatedToolCalls.length > 0 ? "toolUse" : "stop",
+          message: createPartial()
+        });
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        stream.push({
+          type: "error",
+          reason: "error",
+          error: {
+            role: "assistant",
+            content: [],
+            stopReason: "error",
+            errorMessage,
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+            },
+            timestamp: Date.now()
+          }
+        });
+      } finally {
+        stream.end();
+      }
+    };
+    queueMicrotask(() => void run());
+    return stream;
+  };
+}
+
+// src/zero-token/streams/grok-web-stream.ts
+import {
+  createAssistantMessageEventStream as createAssistantMessageEventStream8
 } from "@mariozechner/pi-ai";
 
 // src/zero-token/providers/grok-web-client-browser.ts
@@ -8172,7 +9963,7 @@ ${fullText.slice(0, 1200)}${fullText.length > 1200 ? "\n...(truncated)" : ""}`
 };
 
 // src/zero-token/streams/grok-web-stream.ts
-var sessionMap4 = new LruMap();
+var sessionMap6 = new LruMap();
 function createGrokWebStreamFn(cookieOrJson) {
   let options;
   try {
@@ -8183,12 +9974,12 @@ function createGrokWebStreamFn(cookieOrJson) {
   }
   const client = new GrokWebClientBrowser(options);
   return (model, context, streamOptions) => {
-    const stream = createAssistantMessageEventStream6();
+    const stream = createAssistantMessageEventStream8();
     const run = async () => {
       try {
         await client.init();
         const sessionKey = context.sessionId || "default";
-        let sessionId = sessionMap4.get(sessionKey);
+        let sessionId = sessionMap6.get(sessionKey);
         const messages = context.messages || [];
         const systemPrompt = context.systemPrompt || "";
         const tools = context.tools || [];
@@ -8515,7 +10306,7 @@ Please proceed based on this tool result.`;
           try {
             const data = JSON.parse(dataStr);
             if (data.sessionId) {
-              sessionMap4.set(sessionKey, data.sessionId);
+              sessionMap6.set(sessionKey, data.sessionId);
             }
             const delta = data.contentDelta ?? data.choices?.[0]?.delta?.content ?? data.text ?? data.content ?? data.delta;
             if (typeof delta === "string" && delta) {
@@ -8588,7 +10379,7 @@ Please proceed based on this tool result.`;
 
 // src/zero-token/streams/kimi-web-stream.ts
 import {
-  createAssistantMessageEventStream as createAssistantMessageEventStream7
+  createAssistantMessageEventStream as createAssistantMessageEventStream9
 } from "@mariozechner/pi-ai";
 
 // src/zero-token/providers/kimi-web-client-browser.ts
@@ -8797,7 +10588,7 @@ data: [DONE]
 };
 
 // src/zero-token/streams/kimi-web-stream.ts
-var sessionMap5 = new LruMap();
+var sessionMap7 = new LruMap();
 function createKimiWebStreamFn(cookieOrJson) {
   let options;
   try {
@@ -8808,12 +10599,12 @@ function createKimiWebStreamFn(cookieOrJson) {
   }
   const client = new KimiWebClientBrowser(options);
   return (model, context, streamOptions) => {
-    const stream = createAssistantMessageEventStream7();
+    const stream = createAssistantMessageEventStream9();
     const run = async () => {
       try {
         await client.init();
         const sessionKey = context.sessionId || "default";
-        let sessionId = sessionMap5.get(sessionKey);
+        let sessionId = sessionMap7.get(sessionKey);
         const messages = context.messages || [];
         const systemPrompt = context.systemPrompt || "";
         const tools = context.tools || [];
@@ -9155,7 +10946,7 @@ No self-talk. Reply in user's language. \u5982\u679C\u7528\u6237\u8BF4\u4E2D\u65
           try {
             const data = JSON.parse(dataStr);
             if (data.sessionId || data.conversationId) {
-              sessionMap5.set(sessionKey, data.sessionId || data.conversationId);
+              sessionMap7.set(sessionKey, data.sessionId || data.conversationId);
             }
             const delta = data.choices?.[0]?.delta?.content ?? data.text ?? data.content ?? data.delta;
             if (typeof delta === "string" && delta) {
@@ -9227,7 +11018,7 @@ No self-talk. Reply in user's language. \u5982\u679C\u7528\u6237\u8BF4\u4E2D\u65
 
 // src/zero-token/streams/perplexity-web-stream.ts
 import {
-  createAssistantMessageEventStream as createAssistantMessageEventStream8
+  createAssistantMessageEventStream as createAssistantMessageEventStream10
 } from "@mariozechner/pi-ai";
 
 // src/zero-token/providers/perplexity-web-client-browser.ts
@@ -9457,7 +11248,7 @@ function createPerplexityWebStreamFn(cookieOrJson) {
   }
   const client = new PerplexityWebClientBrowser(options);
   return (model, context, streamOptions) => {
-    const stream = createAssistantMessageEventStream8();
+    const stream = createAssistantMessageEventStream10();
     const run = async () => {
       try {
         await client.init();
@@ -9623,7 +11414,7 @@ ${resultText}
 
 // src/zero-token/streams/qwen-cn-web-stream.ts
 import {
-  createAssistantMessageEventStream as createAssistantMessageEventStream9
+  createAssistantMessageEventStream as createAssistantMessageEventStream11
 } from "@mariozechner/pi-ai";
 
 // src/zero-token/providers/qwen-cn-web-client-browser.ts
@@ -9847,7 +11638,7 @@ var QwenCNWebClientBrowser = class {
 };
 
 // src/zero-token/streams/qwen-cn-web-stream.ts
-var sessionMap6 = new LruMap();
+var sessionMap8 = new LruMap();
 function createQwenCNWebStreamFn(cookieOrJson) {
   let options;
   try {
@@ -9858,12 +11649,12 @@ function createQwenCNWebStreamFn(cookieOrJson) {
   }
   const client = new QwenCNWebClientBrowser(options);
   return (model, context, streamOptions) => {
-    const stream = createAssistantMessageEventStream9();
+    const stream = createAssistantMessageEventStream11();
     const run = async () => {
       try {
         await client.init();
         const sessionKey = context.sessionId || "default";
-        let sessionId = sessionMap6.get(sessionKey);
+        let sessionId = sessionMap8.get(sessionKey);
         const messages = context.messages || [];
         const systemPrompt = context.systemPrompt || "";
         const tools = context.tools || [];
@@ -10235,7 +12026,7 @@ Please proceed based on this tool result.`;
               }
             }
             if (data.sessionId || data.msgId) {
-              sessionMap6.set(sessionKey, data.sessionId || data.msgId);
+              sessionMap8.set(sessionKey, data.sessionId || data.msgId);
             }
             console.log(
               `[QwenCNWebStream] Debug data.data: ${JSON.stringify(data.data)?.substring(0, 200)}`
@@ -10365,12 +12156,12 @@ Please proceed based on this tool result.`;
 
 // src/zero-token/streams/qwen-web-stream.ts
 import {
-  createAssistantMessageEventStream as createAssistantMessageEventStream10
+  createAssistantMessageEventStream as createAssistantMessageEventStream12
 } from "@mariozechner/pi-ai";
 
 // src/zero-token/providers/qwen-web-client-browser.ts
 init_shared_browser();
-import crypto6 from "node:crypto";
+import crypto8 from "node:crypto";
 var QwenWebClientBrowser = class {
   sessionToken;
   cookie;
@@ -10477,7 +12268,7 @@ var QwenWebClientBrowser = class {
     const chatId = createChatResult.chatId;
     console.log(`[Qwen Web Browser] Chat ID: ${chatId}`);
     const fetchTimeoutMs = 3e5;
-    const fid = crypto6.randomUUID();
+    const fid = crypto8.randomUUID();
     const responseData = await page.evaluate(
       async ({ baseUrl, chatId: chatId2, model: model2, message, fid: fid2, timeoutMs }) => {
         let timer = void 0;
@@ -10645,7 +12436,7 @@ function createQwenWebStreamFn(cookieOrJson) {
   }
   const client = new QwenWebClientBrowser(options);
   return (model, context, streamOptions) => {
-    const stream = createAssistantMessageEventStream10();
+    const stream = createAssistantMessageEventStream12();
     const run = async () => {
       try {
         await client.init();
@@ -11063,16 +12854,10 @@ No self-talk. Reply in user's language. \u5982\u679C\u7528\u6237\u8BF4\u4E2D\u65
 }
 
 // src/index.ts
-function emptyPluginConfigSchema() {
-  return {
-    type: "object",
-    additionalProperties: false,
-    properties: {}
-  };
-}
 var ZERO_TOKEN_GROUP_ID = "zero-token";
 var ZERO_TOKEN_GROUP_LABEL = "Zero Token";
 var ZERO_TOKEN_GROUP_HINT = "Use browser sessions instead of API keys.";
+var ZERO_TOKEN_PROFILE_SUFFIX = "default";
 var WEB_PROVIDERS = [
   {
     id: "chatgpt-web",
@@ -11118,6 +12903,24 @@ var WEB_PROVIDERS = [
     buildProvider: buildGeminiWebProvider,
     createStreamFn: createGeminiWebStreamFn,
     login: loginGeminiWeb
+  },
+  {
+    id: "glm-intl-web",
+    label: "GLM International (Web)",
+    envVar: "GLM_INTL_WEB_COOKIE",
+    defaultModelId: GLM_INTL_WEB_DEFAULT_MODEL_ID,
+    buildProvider: buildGlmIntlWebProvider,
+    createStreamFn: createGlmIntlWebStreamFn,
+    login: loginGlmIntlWeb
+  },
+  {
+    id: "glm-web",
+    label: "ChatGLM (Web)",
+    envVar: "GLM_WEB_COOKIE",
+    defaultModelId: Z_WEB_DEFAULT_MODEL_ID,
+    buildProvider: buildZWebProvider,
+    createStreamFn: createGlmWebStreamFn,
+    login: loginZWeb
   },
   {
     id: "grok-web",
@@ -11168,26 +12971,34 @@ var WEB_PROVIDERS = [
 function createAuthProgress(ctx, label) {
   const progress = ctx.prompter.progress(`${label} login`);
   return {
-    update: (message) => progress.update(message),
-    stop: (message) => progress.stop(message)
+    update(message) {
+      progress.update(message);
+    },
+    stop(message) {
+      progress.stop(message);
+    }
   };
 }
 function serializeBrowserAuth(payload) {
   return JSON.stringify(payload);
 }
+function buildDefaultProfileId(providerId) {
+  return `${providerId}:${ZERO_TOKEN_PROFILE_SUFFIX}`;
+}
 function resolveModelAliasMap(providerId, provider) {
-  const nextModels = {};
-  if (Array.isArray(provider.models)) {
-    for (const model of provider.models) {
-      const modelId = typeof model?.id === "string" ? model.id.trim() : "";
-      if (!modelId) {
-        continue;
-      }
-      const alias = typeof model.name === "string" && model.name.trim().length > 0 ? model.name.trim() : modelId;
-      nextModels[`${providerId}/${modelId}`] = { alias };
-    }
+  const models = {};
+  if (!Array.isArray(provider.models)) {
+    return models;
   }
-  return nextModels;
+  for (const model of provider.models) {
+    const modelId = typeof model?.id === "string" ? model.id.trim() : "";
+    if (!modelId) {
+      continue;
+    }
+    const alias = typeof model.name === "string" && model.name.trim().length > 0 ? model.name.trim() : modelId;
+    models[`${providerId}/${modelId}`] = { alias };
+  }
+  return models;
 }
 function buildProviderConfigPatch(desc, provider) {
   const models = resolveModelAliasMap(desc.id, provider);
@@ -11210,7 +13021,7 @@ async function runBrowserAuth(ctx, desc) {
   const progress = createAuthProgress(ctx, desc.label);
   try {
     const authPayload = await desc.login({
-      onProgress: progress.update,
+      onProgress: (message) => progress.update(message),
       openUrl: async (url) => {
         await ctx.openUrl(url);
         return true;
@@ -11224,12 +13035,8 @@ async function runBrowserAuth(ctx, desc) {
       configPatch: buildProviderConfigPatch(desc, provider),
       profiles: [
         {
-          profileId: `${desc.id}:default`,
-          credential: {
-            type: "api_key",
-            provider: desc.id,
-            key: serializedAuth
-          }
+          profileId: buildDefaultProfileId(desc.id),
+          credential: buildApiKeyCredential(desc.id, serializedAuth)
         }
       ],
       notes: [`${desc.label} credentials were stored as a reusable browser-auth profile.`]
@@ -11249,32 +13056,32 @@ async function runCatalog(ctx, desc) {
     provider: await desc.buildProvider({ apiKey: resolvedApiKey })
   };
 }
-async function resolveStreamApiKey(api, config, providerId) {
-  const configuredApiKey = config?.models?.providers?.[providerId]?.apiKey;
+async function resolveStreamApiKey(params) {
+  const configuredApiKey = params.config?.models?.providers?.[params.providerId]?.apiKey;
   let resolvedApiKey = typeof configuredApiKey === "string" && configuredApiKey.trim().length > 0 ? configuredApiKey.trim() : void 0;
   if (!resolvedApiKey) {
-    const resolved = await api.runtime.modelAuth.resolveApiKeyForProvider({
-      provider: providerId,
-      cfg: config
+    const resolved = await params.api.runtime.modelAuth.resolveApiKeyForProvider({
+      provider: params.providerId,
+      cfg: params.config ?? params.api.config,
+      workspaceDir: params.workspaceDir
     });
     resolvedApiKey = resolved.apiKey?.trim() || void 0;
   }
   if (!resolvedApiKey) {
-    throw new Error(`No browser-auth credentials found for provider "${providerId}".`);
+    throw new Error(`No browser-auth credentials found for provider "${params.providerId}".`);
   }
   return resolvedApiKey;
 }
-function createResolvedStreamFn(api, config, desc) {
+function createResolvedStreamFn(api, ctx, desc) {
   return async (model, context, options) => {
-    const resolvedApiKey = await resolveStreamApiKey(api, config, desc.id);
+    const resolvedApiKey = await resolveStreamApiKey({
+      api,
+      config: ctx.config,
+      providerId: desc.id,
+      workspaceDir: ctx.workspaceDir
+    });
     return await desc.createStreamFn(resolvedApiKey)(model, context, options);
   };
-}
-function createConfiguredStreamFn(api, ctx, desc) {
-  return createResolvedStreamFn(api, ctx.config, desc);
-}
-function createWrappedStreamFn(api, ctx, desc) {
-  return createResolvedStreamFn(api, ctx.config, desc);
 }
 function buildRegisteredProvider(api, desc) {
   return {
@@ -11294,12 +13101,7 @@ function buildRegisteredProvider(api, desc) {
       order: "late",
       run: async (ctx) => await runCatalog(ctx, desc)
     },
-    discovery: {
-      order: "late",
-      run: async (ctx) => await runCatalog(ctx, desc)
-    },
-    createStreamFn: (ctx) => createConfiguredStreamFn(api, ctx, desc),
-    wrapStreamFn: (ctx) => createWrappedStreamFn(api, ctx, desc),
+    createStreamFn: (ctx) => createResolvedStreamFn(api, ctx, desc),
     wizard: {
       setup: {
         choiceId: desc.id,
@@ -11313,240 +13115,16 @@ function buildRegisteredProvider(api, desc) {
     }
   };
 }
-function syncSleepMs(ms) {
-  try {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-  } catch {
-    const end = Date.now() + ms;
-    while (Date.now() < end) {
-    }
-  }
-}
-function getListeningPids(port) {
-  const myPid = String(process.pid);
-  const pids = /* @__PURE__ */ new Set();
-  if (process.platform === "win32") {
-    try {
-      const psOut = execSync2(
-        `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`,
-        { encoding: "utf-8", timeout: 8e3 }
-      ).trim();
-      for (const line of psOut.split(/\r?\n/)) {
-        const pid = line.trim();
-        if (pid && pid !== "0" && pid !== myPid) pids.add(pid);
-      }
-    } catch {
-    }
-    if (pids.size === 0) {
-      try {
-        const out = execSync2(
-          `netstat -aon | findstr ":${port} " | findstr "LISTENING"`,
-          { encoding: "utf-8", timeout: 5e3 }
-        ).trim();
-        for (const line of out.split("\n")) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[parts.length - 1];
-          if (pid && pid !== "0" && pid !== myPid) pids.add(pid);
-        }
-      } catch {
-      }
-    }
-  } else {
-    try {
-      const out = execSync2(`lsof -ti :${port}`, { encoding: "utf-8", timeout: 5e3 }).trim();
-      for (const pid of out.split("\n")) {
-        if (pid.trim() && pid.trim() !== myPid) pids.add(pid.trim());
-      }
-    } catch {
-    }
-  }
-  return [...pids];
-}
-function killPid(pid) {
-  try {
-    if (process.platform === "win32") {
-      execSync2(`taskkill /PID ${pid} /T /F`, { timeout: 5e3, stdio: "ignore" });
-    } else {
-      try {
-        process.kill(Number(pid), "SIGKILL");
-      } catch {
-      }
-    }
-  } catch {
-  }
-}
-function waitForPortFree(port, maxWaitMs = 6e3) {
-  const deadline = Date.now() + maxWaitMs;
-  while (Date.now() < deadline) {
-    const pids = getListeningPids(port);
-    if (pids.length === 0) return true;
-    syncSleepMs(500);
-  }
-  return getListeningPids(port).length === 0;
-}
-function findGatewayLockFiles() {
-  const results = [];
-  const tmpDir = os5.tmpdir();
-  const lockDirNames = ["openclaw"];
-  const uid = typeof process.getuid === "function" ? process.getuid() : null;
-  if (uid != null) {
-    lockDirNames.push(`openclaw-${uid}`);
-  }
-  for (const dirName of lockDirNames) {
-    const lockDir = path7.join(tmpDir, dirName);
-    try {
-      if (!fs7.existsSync(lockDir)) continue;
-      for (const file of fs7.readdirSync(lockDir)) {
-        if (file.startsWith("gateway.") && file.endsWith(".lock")) {
-          results.push(path7.join(lockDir, file));
-        }
-      }
-    } catch {
-    }
-  }
-  return results;
-}
-function readLockOwnerPid(lockPath) {
-  try {
-    const raw = fs7.readFileSync(lockPath, "utf-8");
-    const payload = JSON.parse(raw);
-    return typeof payload.pid === "number" ? payload.pid : null;
-  } catch {
-    return null;
-  }
-}
-function forceRemoveLockFile(lockPath) {
-  try {
-    fs7.unlinkSync(lockPath);
-    return true;
-  } catch {
-  }
-  if (process.platform === "win32") {
-    try {
-      execSync2(`cmd /c del /f /q "${lockPath}"`, { timeout: 3e3, stdio: "ignore" });
-      return !fs7.existsSync(lockPath);
-    } catch {
-    }
-  }
-  return false;
-}
-function cleanupStaleGateway(port = 18789) {
-  try {
-    const lockFiles = findGatewayLockFiles();
-    const killedPids = /* @__PURE__ */ new Set();
-    for (const lockPath of lockFiles) {
-      const ownerPid = readLockOwnerPid(lockPath);
-      if (ownerPid && ownerPid !== process.pid) {
-        let alive = false;
-        try {
-          process.kill(ownerPid, 0);
-          alive = true;
-        } catch {
-        }
-        if (alive) {
-          console.log(`[zero-token] Killing lock owner (pid ${ownerPid}) for ${path7.basename(lockPath)}`);
-          killPid(String(ownerPid));
-          killedPids.add(String(ownerPid));
-          syncSleepMs(500);
-        }
-      }
-      if (forceRemoveLockFile(lockPath)) {
-        console.log(`[zero-token] Removed lock file: ${lockPath}`);
-      } else {
-        console.warn(`[zero-token] WARN: Could not remove lock file: ${lockPath}`);
-      }
-    }
-    const portPids = getListeningPids(port);
-    for (const pid of portPids) {
-      if (!killedPids.has(pid)) {
-        console.log(`[zero-token] Killing stale gateway process (pid ${pid}) on port ${port}`);
-        killPid(pid);
-        killedPids.add(pid);
-      }
-    }
-    if (killedPids.size > 0) {
-      const portFree = waitForPortFree(port, 6e3);
-      if (!portFree) {
-        console.warn(`[zero-token] Port ${port} still occupied after killing ${killedPids.size} process(es)`);
-        for (const pid of getListeningPids(port)) {
-          console.log(`[zero-token] Final retry: killing pid ${pid}`);
-          killPid(pid);
-        }
-        syncSleepMs(2e3);
-      }
-    }
-    for (const lockPath of findGatewayLockFiles()) {
-      forceRemoveLockFile(lockPath);
-    }
-    const stillOccupied = getListeningPids(port).length > 0;
-    const remainingLocks = findGatewayLockFiles().length;
-    if (stillOccupied || remainingLocks > 0) {
-      console.warn(
-        `[zero-token] Cannot fully clean gateway state (port occupied=${stillOccupied}, locks remaining=${remainingLocks}). Setting OPENCLAW_ALLOW_MULTI_GATEWAY=1 to bypass lock.`
-      );
-      process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
-    }
-  } catch (err) {
-    console.warn(`[zero-token] Gateway cleanup error: ${err instanceof Error ? err.message : String(err)}`);
-    process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
-  }
-}
-try {
-  console.log("[zero-token] Running early gateway cleanup at module load time...");
-  cleanupStaleGateway();
-} catch {
-  process.env.OPENCLAW_ALLOW_MULTI_GATEWAY = "1";
-}
-var zeroTokenPlugin = {
+var index_default = definePluginEntry({
   id: "zero-token",
   name: "Zero Token Web Providers",
   description: "Use browser-authenticated web models without standard API keys.",
-  configSchema: emptyPluginConfigSchema(),
   register(api) {
-    const gatewayPort = api.runtime?.config?.gateway?.port ?? 18789;
-    cleanupStaleGateway(gatewayPort);
-    const webProviderIds = new Set(WEB_PROVIDERS.map((d) => d.id));
-    const webProviderMap = new Map(WEB_PROVIDERS.map((d) => [d.id, d]));
     for (const desc of WEB_PROVIDERS) {
       api.registerProvider(buildRegisteredProvider(api, desc));
     }
-    const builtinProvider = getApiProvider("openai-completions");
-    console.log(`[zero-token] builtinProvider found: ${!!builtinProvider}`);
-    if (builtinProvider) {
-      const originalStream = builtinProvider.stream;
-      const originalStreamSimple = builtinProvider.streamSimple;
-      const makeInterceptor = (original) => {
-        return async (model, context, options) => {
-          const providerId = typeof model.provider === "string" ? model.provider.trim() : "";
-          const toolCount = Array.isArray(context.tools) ? context.tools.length : "undefined";
-          console.log(`[zero-token] interceptor called: model.provider="${providerId}", model.api="${model.api}", model.id="${model.id}", isWebProvider=${webProviderIds.has(providerId)}, context.tools=${toolCount}, contextKeys=${Object.keys(context).join(",")}`);
-          if (webProviderIds.has(providerId)) {
-            const desc = webProviderMap.get(providerId);
-            const resolved = await api.runtime.modelAuth.resolveApiKeyForProvider({
-              provider: desc.id,
-              cfg: api.runtime.config
-            });
-            const apiKey = resolved.apiKey?.trim();
-            if (!apiKey) {
-              throw new Error(
-                `No browser-auth credentials found for provider "${desc.id}".`
-              );
-            }
-            return desc.createStreamFn(apiKey)(model, context, options);
-          }
-          return original(model, context, options);
-        };
-      };
-      registerApiProvider({
-        api: "openai-completions",
-        stream: makeInterceptor(originalStream),
-        streamSimple: makeInterceptor(originalStreamSimple)
-      });
-      console.log(`[zero-token] re-registered openai-completions with interceptor`);
-    }
   }
-};
-var index_default = zeroTokenPlugin;
+});
 export {
   index_default as default
 };

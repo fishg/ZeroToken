@@ -33,7 +33,6 @@ The macOS launcher will:
 
 - install a local OpenClaw runtime under `.zero-token-runtime/`
 - install the plugin into OpenClaw
-- patch the local OpenClaw `api-registry.js`
 - offer to install Chrome / Edge / Brave / Chromium automatically if none is found
 - let you pick a browser, log in to providers, and start the gateway
 
@@ -81,6 +80,6 @@ openclaw plugins install .
 
 ## Notes
 
-- The plugin uses the host OpenClaw runtime via `openclaw/plugin-sdk/core`.
+- The plugin integrates only through public `openclaw/plugin-sdk/*` entrypoints.
 - Browser credentials are stored through OpenClaw auth profiles and resolved at runtime.
 - Chrome/Edge/Brave/Chromium discovery is included for macOS, Linux, and Windows.

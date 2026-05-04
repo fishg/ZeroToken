@@ -1,5 +1,7 @@
 {
   "id": "zero-token",
+  "name": "Zero Token Web Providers",
+  "description": "Browser-authenticated web provider plugin for OpenClaw",
   "providers": [
     "deepseek-web",
     "claude-web",
@@ -9,8 +11,184 @@
     "qwen-cn-web",
     "kimi-web",
     "gemini-web",
+    "glm-web",
+    "glm-intl-web",
     "grok-web",
     "perplexity-web"
+  ],
+  "setup": {
+    "providers": [
+      {
+        "id": "chatgpt-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["CHATGPT_WEB_COOKIE"]
+      },
+      {
+        "id": "claude-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["CLAUDE_WEB_COOKIE"]
+      },
+      {
+        "id": "deepseek-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["DEEPSEEK_WEB_COOKIE"]
+      },
+      {
+        "id": "doubao-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["DOUBAO_WEB_COOKIE"]
+      },
+      {
+        "id": "gemini-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["GEMINI_WEB_COOKIE"]
+      },
+      {
+        "id": "glm-intl-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["GLM_INTL_WEB_COOKIE"]
+      },
+      {
+        "id": "glm-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["GLM_WEB_COOKIE"]
+      },
+      {
+        "id": "grok-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["GROK_WEB_COOKIE"]
+      },
+      {
+        "id": "kimi-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["KIMI_WEB_COOKIE"]
+      },
+      {
+        "id": "perplexity-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["PERPLEXITY_WEB_COOKIE"]
+      },
+      {
+        "id": "qwen-cn-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["QWEN_CN_WEB_COOKIE"]
+      },
+      {
+        "id": "qwen-web",
+        "authMethods": ["browser-login"],
+        "envVars": ["QWEN_WEB_COOKIE"]
+      }
+    ]
+  },
+  "providerAuthChoices": [
+    {
+      "provider": "chatgpt-web",
+      "method": "browser-login",
+      "choiceId": "chatgpt-web",
+      "choiceLabel": "ChatGPT (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "claude-web",
+      "method": "browser-login",
+      "choiceId": "claude-web",
+      "choiceLabel": "Claude (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "deepseek-web",
+      "method": "browser-login",
+      "choiceId": "deepseek-web",
+      "choiceLabel": "DeepSeek (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "doubao-web",
+      "method": "browser-login",
+      "choiceId": "doubao-web",
+      "choiceLabel": "Doubao (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "gemini-web",
+      "method": "browser-login",
+      "choiceId": "gemini-web",
+      "choiceLabel": "Gemini (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "glm-intl-web",
+      "method": "browser-login",
+      "choiceId": "glm-intl-web",
+      "choiceLabel": "GLM International (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "glm-web",
+      "method": "browser-login",
+      "choiceId": "glm-web",
+      "choiceLabel": "ChatGLM (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "grok-web",
+      "method": "browser-login",
+      "choiceId": "grok-web",
+      "choiceLabel": "Grok (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "kimi-web",
+      "method": "browser-login",
+      "choiceId": "kimi-web",
+      "choiceLabel": "Kimi (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "perplexity-web",
+      "method": "browser-login",
+      "choiceId": "perplexity-web",
+      "choiceLabel": "Perplexity (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "qwen-cn-web",
+      "method": "browser-login",
+      "choiceId": "qwen-cn-web",
+      "choiceLabel": "Qwen CN (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    },
+    {
+      "provider": "qwen-web",
+      "method": "browser-login",
+      "choiceId": "qwen-web",
+      "choiceLabel": "Qwen (Web)",
+      "groupId": "zero-token",
+      "groupLabel": "Zero Token",
+      "groupHint": "Use browser sessions instead of API keys."
+    }
   ],
   "configSchema": {
     "type": "object",

@@ -477,17 +477,6 @@ async function runOpenClaw(args, options = {}) {
   return await spawnWithInheritedStdio(process.execPath, [LOCAL_OPENCLAW_ENTRY, ...args], options);
 }
 
-async function patchLocalOpenClaw() {
-  await ensureLocalOpenClawInstalled();
-  await spawnWithInheritedStdio(process.execPath, ["patch-registry.js"], {
-    cwd: PROJECT_DIR,
-    env: {
-      ...process.env,
-      ZERO_TOKEN_OPENCLAW_ROOT: LOCAL_OPENCLAW_ROOT,
-    },
-  });
-}
-
 async function waitForGatewayAndOpenBrowser() {
   const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
@@ -597,10 +586,6 @@ async function installOrUpdatePlugin({ firstRun = false } = {}) {
   console.log("  Installing Zero-Token into the local OpenClaw runtime...");
   console.log("");
   await runOpenClaw(["plugins", "install", "."]);
-  console.log("");
-  console.log("  Patching the OpenClaw api registry...");
-  console.log("");
-  await patchLocalOpenClaw();
   console.log("");
   console.log("  [ok] Zero-Token is ready.");
 }
