@@ -67,6 +67,7 @@ export async function loginZWeb(options: ZWebAuthOptions = {}): Promise<ZWebAuth
     });
     const context = browser.contexts()[0];
     const page = context.pages()[0] || (await context.newPage());
+    // page.setDefaultTimeout(120000);
 
     onProgress("Navigating to ChatGLM...");
     await page.goto("https://chatglm.cn", { waitUntil: "domcontentloaded" });

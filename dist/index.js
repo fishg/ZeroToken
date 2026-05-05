@@ -1829,8 +1829,8 @@ async function buildZWebProvider(_params) {
     api: "openai-completions",
     models: [
       {
-        id: "glm-5-plus",
-        name: "glm-5 Plus (Web)",
+        id: "glm-5",
+        name: "glm-5 (Web)",
         reasoning: false,
         input: ["text"],
         cost: Z_WEB_DEFAULT_COST,
@@ -1855,8 +1855,8 @@ async function buildGlmIntlWebProvider(_params) {
     api: "openai-completions",
     models: [
       {
-        id: "glm-5-plus",
-        name: "glm-5 Plus (International)",
+        id: "glm-5",
+        name: "glm-5 (International)",
         reasoning: false,
         input: ["text"],
         cost: GLM_INTL_WEB_DEFAULT_COST,
@@ -5642,7 +5642,7 @@ var DeepSeekWebClient = class {
     }
     this.cookie = finalOptions.cookie || "";
     this.bearer = finalOptions.bearer || "";
-    this.userAgent = finalOptions.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    this.userAgent = finalOptions.userAgent || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
   }
   async fetchHeaders() {
     return {
@@ -8939,6 +8939,10 @@ var ZWebClientBrowser = class {
             "X-Device-Model": "",
             "X-Exp-Groups": xExpGroups,
             "X-Lang": "zh",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
             "X-Nonce": sign2.nonce,
             "X-Request-Id": requestId2,
             "X-Sign": sign2.sign,
@@ -9049,6 +9053,10 @@ var ZWebClientBrowser = class {
                 Accept: "text/event-stream",
                 "App-Name": "chatglm",
                 Origin: "https://chatglm.cn",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
                 "X-App-Platform": "pc",
                 "X-App-Version": "0.0.1",
                 "X-App-fr": "default",
@@ -11442,7 +11450,7 @@ var QwenCNWebClientBrowser = class {
     }
     this.cookie = finalOptions.cookie || "";
     this.xsrfToken = finalOptions.xsrfToken || "";
-    this.userAgent = finalOptions.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    this.userAgent = finalOptions.userAgent || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
     this.ut = finalOptions.ut || "";
     if (!this.ut && this.cookie) {
       const match = this.cookie.match(/(?:^|;\\s*)b-user-id=([^;]+)/i);

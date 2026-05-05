@@ -1,6 +1,6 @@
 {
   "name": "zero-token",
-  "version": "2026.4.1",
+  "version": "2026.5.5",
   "description": "Standalone Zero Token plugin for OpenClaw browser-authenticated web providers",
   "license": "MIT",
   "type": "module",
