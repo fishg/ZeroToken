@@ -8284,6 +8284,105 @@ var GlmIntlWebClientBrowser = class {
   }
 };
 
+// src/zero-token/utils/tool-call-parser.ts
+function matchToolCallStart(buffer) {
+  const xmlMatch = buffer.match(
+    /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i
+  );
+  const legacyMatch = buffer.match(/<tool_call>\s*([A-Za-z_][\w.-]*)\s*:\s*/i);
+  const xmlIndex = xmlMatch?.index ?? -1;
+  const legacyIndex = legacyMatch?.index ?? -1;
+  if (xmlIndex === -1 && legacyIndex === -1) {
+    return null;
+  }
+  if (legacyIndex !== -1 && (xmlIndex === -1 || legacyIndex < xmlIndex)) {
+    return {
+      id: void 0,
+      name: legacyMatch[1],
+      index: legacyIndex,
+      length: legacyMatch[0].length
+    };
+  }
+  return {
+    id: xmlMatch?.[1] || xmlMatch?.[3],
+    name: xmlMatch?.[2] || "",
+    index: xmlIndex,
+    length: xmlMatch?.[0].length || 0
+  };
+}
+function findCompleteJsonPrefix(buffer) {
+  const start = buffer.search(/\S/);
+  if (start === -1) {
+    return null;
+  }
+  const first = buffer[start];
+  if (first !== "{" && first !== "[") {
+    return null;
+  }
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < buffer.length; i++) {
+    const ch = buffer[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{" || ch === "[") {
+      depth++;
+      continue;
+    }
+    if (ch === "}" || ch === "]") {
+      depth--;
+      if (depth === 0) {
+        return i + 1;
+      }
+    }
+  }
+  return null;
+}
+function parseToolArguments(rawArguments, streamLabel, toolName) {
+  let cleanedArg = rawArguments.trim();
+  if (cleanedArg.startsWith("```json")) {
+    cleanedArg = cleanedArg.substring(7);
+  } else if (cleanedArg.startsWith("```")) {
+    cleanedArg = cleanedArg.substring(3);
+  }
+  if (cleanedArg.endsWith("```")) {
+    cleanedArg = cleanedArg.substring(0, cleanedArg.length - 3);
+  }
+  cleanedArg = cleanedArg.trim();
+  try {
+    const parsed = JSON.parse(cleanedArg || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return { value: parsed };
+  } catch (error) {
+    console.error(
+      `[${streamLabel}] Failed to parse JSON for tool call ${toolName}:`,
+      rawArguments,
+      "\nError:",
+      error
+    );
+    return { raw: rawArguments };
+  }
+}
+
 // src/zero-token/streams/glm-intl-web-stream.ts
 var sessionMap4 = new LruMap();
 function createGlmIntlWebStreamFn(cookieOrJson) {
@@ -8441,6 +8540,23 @@ Please proceed based on this tool result.`;
         let currentToolName = "";
         let currentToolIndex = 0;
         let tagBuffer = "";
+        const finalizeCurrentToolCall = () => {
+          const index = indexMap.get(`tool_${currentToolIndex}`);
+          if (index === void 0) {
+            return;
+          }
+          const part = contentParts[index];
+          const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
+          part.arguments = parseToolArguments(argStr, "GlmIntlWebStream", currentToolName);
+          stream.push({
+            type: "toolcall_end",
+            contentIndex: index,
+            toolCall: part,
+            partial: createPartial()
+          });
+          currentMode = "text";
+          currentToolIndex++;
+        };
         const emitDelta = (type, delta, forceId) => {
           if (delta === "" && type !== "toolcall") {
             return;
@@ -8519,10 +8635,9 @@ Please proceed based on this tool result.`;
           const checkTags = () => {
             const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
             const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
-            const toolCallStart = tagBuffer.match(
-              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i
-            );
+            const toolCallStart = matchToolCallStart(tagBuffer);
             const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
+            const implicitToolCallEnd = currentMode === "tool_call" ? findCompleteJsonPrefix(tagBuffer) : null;
             const indices = [
               {
                 type: "think_start",
@@ -8533,14 +8648,19 @@ Please proceed based on this tool result.`;
               {
                 type: "tool_start",
                 idx: toolCallStart?.index ?? -1,
-                len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1] || toolCallStart?.[3],
-                name: toolCallStart?.[2]
+                len: toolCallStart?.length ?? 0,
+                id: toolCallStart?.id,
+                name: toolCallStart?.name
               },
               {
                 type: "tool_end",
                 idx: toolCallEnd?.index ?? -1,
                 len: toolCallEnd?.[0].length ?? 0
+              },
+              {
+                type: "tool_end_implicit",
+                idx: implicitToolCallEnd ?? -1,
+                len: 0
               }
             ].filter((t) => t.idx !== -1).toSorted((a, b) => a.idx - b.idx);
             if (indices.length > 0) {
@@ -8563,41 +8683,8 @@ Please proceed based on this tool result.`;
                 currentMode = "tool_call";
                 currentToolName = first.name;
                 emitDelta("toolcall", "", first.id);
-              } else if (first.type === "tool_end") {
-                const index = indexMap.get(`tool_${currentToolIndex}`);
-                if (index !== void 0) {
-                  const part = contentParts[index];
-                  const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
-                  let cleanedArg = argStr.trim();
-                  if (cleanedArg.startsWith("```json")) {
-                    cleanedArg = cleanedArg.substring(7);
-                  } else if (cleanedArg.startsWith("```")) {
-                    cleanedArg = cleanedArg.substring(3);
-                  }
-                  if (cleanedArg.endsWith("```")) {
-                    cleanedArg = cleanedArg.substring(0, cleanedArg.length - 3);
-                  }
-                  cleanedArg = cleanedArg.trim();
-                  try {
-                    part.arguments = JSON.parse(cleanedArg);
-                  } catch (e) {
-                    part.arguments = { raw: argStr };
-                    console.error(
-                      `[GlmIntlWebStream] Failed to parse JSON for tool call ${currentToolName}:`,
-                      argStr,
-                      "\nError:",
-                      e
-                    );
-                  }
-                  stream.push({
-                    type: "toolcall_end",
-                    contentIndex: index,
-                    toolCall: part,
-                    partial: createPartial()
-                  });
-                }
-                currentMode = "text";
-                currentToolIndex++;
+              } else if (first.type === "tool_end" || first.type === "tool_end_implicit") {
+                finalizeCurrentToolCall();
               }
               tagBuffer = tagBuffer.slice(first.idx + first.len);
               checkTags();
@@ -8684,6 +8771,15 @@ Please proceed based on this tool result.`;
           }
         }
         if (tagBuffer) {
+          if (currentMode === "tool_call") {
+            const implicitToolCallEnd = findCompleteJsonPrefix(tagBuffer);
+            if (implicitToolCallEnd !== null) {
+              const safe = tagBuffer.slice(0, implicitToolCallEnd);
+              emitDelta("toolcall", safe);
+              tagBuffer = tagBuffer.slice(implicitToolCallEnd);
+              finalizeCurrentToolCall();
+            }
+          }
           const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
           emitDelta(mode, tagBuffer);
         }
@@ -9288,6 +9384,23 @@ Please proceed based on this tool result.`;
         let currentToolName = "";
         let currentToolIndex = 0;
         let tagBuffer = "";
+        const finalizeCurrentToolCall = () => {
+          const index = indexMap.get(`tool_${currentToolIndex}`);
+          if (index === void 0) {
+            return;
+          }
+          const part = contentParts[index];
+          const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
+          part.arguments = parseToolArguments(argStr, "ZWebStream", currentToolName);
+          stream.push({
+            type: "toolcall_end",
+            contentIndex: index,
+            toolCall: part,
+            partial: createPartial()
+          });
+          currentMode = "text";
+          currentToolIndex++;
+        };
         const emitDelta = (type, delta, forceId) => {
           if (delta === "" && type !== "toolcall") {
             return;
@@ -9366,10 +9479,9 @@ Please proceed based on this tool result.`;
           const checkTags = () => {
             const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
             const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
-            const toolCallStart = tagBuffer.match(
-              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i
-            );
+            const toolCallStart = matchToolCallStart(tagBuffer);
             const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
+            const implicitToolCallEnd = currentMode === "tool_call" ? findCompleteJsonPrefix(tagBuffer) : null;
             const indices = [
               {
                 type: "think_start",
@@ -9380,14 +9492,19 @@ Please proceed based on this tool result.`;
               {
                 type: "tool_start",
                 idx: toolCallStart?.index ?? -1,
-                len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1] || toolCallStart?.[3],
-                name: toolCallStart?.[2]
+                len: toolCallStart?.length ?? 0,
+                id: toolCallStart?.id,
+                name: toolCallStart?.name
               },
               {
                 type: "tool_end",
                 idx: toolCallEnd?.index ?? -1,
                 len: toolCallEnd?.[0].length ?? 0
+              },
+              {
+                type: "tool_end_implicit",
+                idx: implicitToolCallEnd ?? -1,
+                len: 0
               }
             ].filter((t) => t.idx !== -1).toSorted((a, b) => a.idx - b.idx);
             if (indices.length > 0) {
@@ -9410,41 +9527,8 @@ Please proceed based on this tool result.`;
                 currentMode = "tool_call";
                 currentToolName = first.name;
                 emitDelta("toolcall", "", first.id);
-              } else if (first.type === "tool_end") {
-                const index = indexMap.get(`tool_${currentToolIndex}`);
-                if (index !== void 0) {
-                  const part = contentParts[index];
-                  const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
-                  let cleanedArg = argStr.trim();
-                  if (cleanedArg.startsWith("```json")) {
-                    cleanedArg = cleanedArg.substring(7);
-                  } else if (cleanedArg.startsWith("```")) {
-                    cleanedArg = cleanedArg.substring(3);
-                  }
-                  if (cleanedArg.endsWith("```")) {
-                    cleanedArg = cleanedArg.substring(0, cleanedArg.length - 3);
-                  }
-                  cleanedArg = cleanedArg.trim();
-                  try {
-                    part.arguments = JSON.parse(cleanedArg);
-                  } catch (e) {
-                    part.arguments = { raw: argStr };
-                    console.error(
-                      `[Qwen Stream] Failed to parse JSON for tool call ${currentToolName}:`,
-                      argStr,
-                      "\nError:",
-                      e
-                    );
-                  }
-                  stream.push({
-                    type: "toolcall_end",
-                    contentIndex: index,
-                    toolCall: part,
-                    partial: createPartial()
-                  });
-                }
-                currentMode = "text";
-                currentToolIndex++;
+              } else if (first.type === "tool_end" || first.type === "tool_end_implicit") {
+                finalizeCurrentToolCall();
               }
               tagBuffer = tagBuffer.slice(first.idx + first.len);
               checkTags();
@@ -9527,6 +9611,15 @@ Please proceed based on this tool result.`;
           }
         }
         if (tagBuffer) {
+          if (currentMode === "tool_call") {
+            const implicitToolCallEnd = findCompleteJsonPrefix(tagBuffer);
+            if (implicitToolCallEnd !== null) {
+              const safe = tagBuffer.slice(0, implicitToolCallEnd);
+              emitDelta("toolcall", safe);
+              tagBuffer = tagBuffer.slice(implicitToolCallEnd);
+              finalizeCurrentToolCall();
+            }
+          }
           const mode = currentMode === "thinking" ? "thinking" : currentMode === "tool_call" ? "toolcall" : "text";
           emitDelta(mode, tagBuffer);
         }

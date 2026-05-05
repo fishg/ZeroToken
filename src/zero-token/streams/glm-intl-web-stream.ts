@@ -13,6 +13,11 @@ import {
 } from "../providers/glm-intl-web-client-browser.js";
 import { withRetry } from "../utils/retry.js";
 import { LruMap } from "../utils/lru-map.js";
+import {
+  findCompleteJsonPrefix,
+  matchToolCallStart,
+  parseToolArguments,
+} from "../utils/tool-call-parser.js";
 
 const sessionMap = new LruMap<string, string>();
 
@@ -195,6 +200,26 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
         let currentToolIndex = 0;
         let tagBuffer = "";
 
+        const finalizeCurrentToolCall = () => {
+          const index = indexMap.get(`tool_${currentToolIndex}`);
+          if (index === undefined) {
+            return;
+          }
+
+          const part = contentParts[index] as ToolCall;
+          const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
+          part.arguments = parseToolArguments(argStr, "GlmIntlWebStream", currentToolName);
+
+          stream.push({
+            type: "toolcall_end",
+            contentIndex: index,
+            toolCall: part,
+            partial: createPartial(),
+          });
+          currentMode = "text";
+          currentToolIndex++;
+        };
+
         const emitDelta = (
           type: "text" | "thinking" | "toolcall",
           delta: string,
@@ -281,10 +306,10 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
           const checkTags = () => {
             const thinkStart = tagBuffer.match(/<think\b[^<>]*>/i);
             const thinkEnd = tagBuffer.match(/<\/think\b[^<>]*>/i);
-            const toolCallStart = tagBuffer.match(
-              /<tool_call\s+(?:id=['"]?([^'"]+)['"]?\s+)?name=['"]?([^'"]+)['"]?\s*(?:id=['"]?([^'"]+)['"]?\s*)?>/i,
-            );
+            const toolCallStart = matchToolCallStart(tagBuffer);
             const toolCallEnd = tagBuffer.match(/<\/tool_call\s*>/i);
+            const implicitToolCallEnd =
+              currentMode === "tool_call" ? findCompleteJsonPrefix(tagBuffer) : null;
 
             const indices = [
               {
@@ -296,14 +321,19 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
               {
                 type: "tool_start",
                 idx: toolCallStart?.index ?? -1,
-                len: toolCallStart?.[0].length ?? 0,
-                id: toolCallStart?.[1] || toolCallStart?.[3],
-                name: toolCallStart?.[2],
+                len: toolCallStart?.length ?? 0,
+                id: toolCallStart?.id,
+                name: toolCallStart?.name,
               },
               {
                 type: "tool_end",
                 idx: toolCallEnd?.index ?? -1,
                 len: toolCallEnd?.[0].length ?? 0,
+              },
+              {
+                type: "tool_end_implicit",
+                idx: implicitToolCallEnd ?? -1,
+                len: 0,
               },
             ]
               .filter((t) => t.idx !== -1)
@@ -330,43 +360,8 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
                 currentMode = "tool_call";
                 currentToolName = first.name!;
                 emitDelta("toolcall", "", first.id);
-              } else if (first.type === "tool_end") {
-                const index = indexMap.get(`tool_${currentToolIndex}`);
-                if (index !== undefined) {
-                  const part = contentParts[index] as ToolCall;
-                  const argStr = accumulatedToolCalls[currentToolIndex].arguments || "{}";
-
-                  let cleanedArg = argStr.trim();
-                  if (cleanedArg.startsWith("```json")) {
-                    cleanedArg = cleanedArg.substring(7);
-                  } else if (cleanedArg.startsWith("```")) {
-                    cleanedArg = cleanedArg.substring(3);
-                  }
-                  if (cleanedArg.endsWith("```")) {
-                    cleanedArg = cleanedArg.substring(0, cleanedArg.length - 3);
-                  }
-                  cleanedArg = cleanedArg.trim();
-
-                  try {
-                    part.arguments = JSON.parse(cleanedArg);
-                  } catch (e) {
-                    part.arguments = { raw: argStr };
-                    console.error(
-                      `[GlmIntlWebStream] Failed to parse JSON for tool call ${currentToolName}:`,
-                      argStr,
-                      "\nError:",
-                      e,
-                    );
-                  }
-                  stream.push({
-                    type: "toolcall_end",
-                    contentIndex: index,
-                    toolCall: part,
-                    partial: createPartial(),
-                  });
-                }
-                currentMode = "text";
-                currentToolIndex++;
+              } else if (first.type === "tool_end" || first.type === "tool_end_implicit") {
+                finalizeCurrentToolCall();
               }
               tagBuffer = tagBuffer.slice(first.idx + first.len);
               checkTags();
@@ -481,6 +476,15 @@ export function createGlmIntlWebStreamFn(cookieOrJson: string): StreamFn {
 
         // Flush remaining tag buffer
         if (tagBuffer) {
+          if (currentMode === "tool_call") {
+            const implicitToolCallEnd = findCompleteJsonPrefix(tagBuffer);
+            if (implicitToolCallEnd !== null) {
+              const safe = tagBuffer.slice(0, implicitToolCallEnd);
+              emitDelta("toolcall", safe);
+              tagBuffer = tagBuffer.slice(implicitToolCallEnd);
+              finalizeCurrentToolCall();
+            }
+          }
           const mode =
             (currentMode as string) === "thinking"
               ? "thinking"
